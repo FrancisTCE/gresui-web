@@ -1,4 +1,4 @@
-// Shared types — pure types, no runtime imports. Both realms (Deno backend,
+// Shared types — pure types, no runtime imports. Both realms (backend,
 // web frontend) import this file directly.
 
 export interface ConnectionConfig {

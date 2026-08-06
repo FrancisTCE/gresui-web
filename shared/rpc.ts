@@ -55,7 +55,7 @@ export interface Bindings {
   ): Promise<number>; // rows deleted
   runSql(text: string, opts?: { explain?: boolean }): Promise<QueryResult>;
   cancelQuery(): Promise<void>;
-  /** Forward a webview-side error to the backend log file. */
+  /** Forward a frontend-side error to the backend log file. */
   logError(message: string): Promise<void>;
   listHistory(): Promise<HistoryEntry[]>;
   clearHistory(): Promise<void>;

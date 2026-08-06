@@ -1,20 +1,13 @@
-// Typed access to the `bindings` global exposed by `deno desktop`.
+// Typed access to the backend RPC bindings.
 import type { Bindings } from "../../../shared/rpc.ts";
 
 declare global {
-  // eslint-disable-next-line no-var
-  var bindings: Bindings;
-  // Injected into index.html by the backend (web mode only).
+  // Injected into index.html by the backend.
   var __GRESUI_TOKEN__: string | undefined;
 }
 
-export function hasBindings(): boolean {
-  return typeof globalThis.bindings !== "undefined";
-}
-
-/** Desktop webview bindings when present, else the HTTP-RPC proxy (web mode). */
+/** The frontend talks to the backend over HTTP (JSON-RPC on /rpc). */
 export function getBindings(): Bindings {
-  if (hasBindings()) return globalThis.bindings;
   return httpBindings();
 }
 
@@ -30,7 +23,7 @@ function httpBindings(): Bindings {
 }
 
 /**
- * POST to the backend's /rpc endpoint. Mirrors the desktop envelope:
+ * POST to the backend's /rpc endpoint. Mirrors the RPC envelope:
  * 200 + `{result}` / `{error:{name,message}}`; the guard failures
  * (400/401/403) also carry the error envelope.
  */

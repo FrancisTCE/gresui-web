@@ -240,7 +240,8 @@ export async function loadKey(
       throw new Error(
         `gresui keychain entry is missing (service "${KEYCHAIN_SERVICE}", ` +
         `account "${KEYCHAIN_ACCOUNT}") — stored passwords cannot be decrypted ` +
-        "without it. Re-launch in your desktop session, restore the keychain, " +
+        "without it. Restart gresui-web from your desktop session and restore " +
+        "the keychain, " +
         "or set GRESUI_KEY_SOURCE=file to force a local key (existing " +
         "passwords will read empty and must be re-entered).",
       );
