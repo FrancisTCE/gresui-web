@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GRESUI</title>
+    <style>
+      html {
+        background: #1d2129;
+      }
+    </style>
+    <style>
+      /* Splash shown until React mounts; removed automatically on render. */
+      #splash {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        background: #1d2129;
+        color: #dde1e6;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        z-index: 9999;
+      }
+      #splash .logo {
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        color: #13aa52;
+      }
+      #splash .bar {
+        width: 120px;
+        height: 3px;
+        border-radius: 2px;
+        background: #2b323d;
+        overflow: hidden;
+      }
+      #splash .bar::after {
+        content: "";
+        display: block;
+        width: 40%;
+        height: 100%;
+        border-radius: 2px;
+        background: #13aa52;
+        animation: slide 1.1s ease-in-out infinite;
+      }
+      @keyframes slide {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(320%);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div id="splash">
+        <div class="logo">GRESUI</div>
+        <div class="bar"></div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,92 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..600&display=swap');
+@import "tailwindcss";
+/* Semantic tokens. :root = light, .dark = dark. App defaults to dark per Settings. */
+:root {
+  --bg: #ffffff;
+  --bg-raised: #f6f7f9;
+  --bg-hover: #eef0f3;
+  --bg-active: #e3e6ea;
+  --border: #d9dce1;
+  --text: #1b1f24;
+  --text-muted: #69707d;
+  --accent: #0e8a43;
+  --accent-hover: #0c7a3b;
+  --accent-fg: #ffffff;
+  --danger: #d64545;
+  --danger-fg: #ffffff;
+  --ring: rgba(14, 138, 67, 0.45);
+  --code-bg: #f0f1f3;
+  --selection: rgba(14, 138, 67, 0.14);
+}
+
+.dark {
+  --bg: #1d2129;
+  --bg-raised: #242a33;
+  --bg-hover: #2b323d;
+  --bg-active: #333b48;
+  --border: #343d4a;
+  --text: #dde1e6;
+  --text-muted: #8b93a1;
+  --accent: #13aa52;
+  --accent-hover: #16bd5c;
+  --accent-fg: #ffffff;
+  --danger: #e5484d;
+  --danger-fg: #ffffff;
+  --ring: rgba(19, 170, 82, 0.45);
+  --code-bg: #171b21;
+  --selection: rgba(19, 170, 82, 0.22);
+}
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-raised: var(--bg-raised);
+  --color-surface: var(--bg-hover);
+  --color-surface-active: var(--bg-active);
+  --color-border: var(--border);
+  --color-foreground: var(--text);
+  --color-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-danger: var(--danger);
+  --color-danger-fg: var(--danger-fg);
+  --color-ring: var(--ring);
+  --color-code: var(--code-bg);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+::selection {
+  background: var(--selection);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+/* Monospace stack for SQL / data cells. */
+.font-mono,
+code,
+kbd,
+pre {
+  font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular,
+    Menlo, Consolas, monospace;
+}
