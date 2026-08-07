@@ -1,21 +1,23 @@
-// Main shell: TopBar + Sidebar + tabbed content (Table | SQL | Info).
-import { Table2, Info as InfoIcon, SquareTerminal, MousePointerSquareDashed } from "lucide-react";
+// Main shell: TopBar + Sidebar + tabbed content (Table | SQL | Info | MCP).
+import { Table2, Info as InfoIcon, Plug, SquareTerminal, MousePointerSquareDashed } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { useAppStore } from "@/AppStore.tsx";
 import { Sidebar } from "@/components/Sidebar.tsx";
 import { TopBar } from "@/components/TopBar.tsx";
 import { InfoTab } from "@/components/tabs/InfoTab.tsx";
+import { McpTab } from "@/components/tabs/McpTab.tsx";
 import { SqlTab } from "@/components/tabs/SqlTab.tsx";
 import { TableTab } from "@/components/tabs/TableTab.tsx";
 import { cn } from "@/lib/utils.ts";
 
-export type TabId = "table" | "sql" | "info";
+export type TabId = "table" | "sql" | "info" | "mcp";
 
 const TABS: { id: TabId; label: string; icon: typeof Table2 }[] = [
   { id: "table", label: "Table", icon: Table2 },
   { id: "sql", label: "SQL", icon: SquareTerminal },
   { id: "info", label: "Info", icon: InfoIcon },
+  { id: "mcp", label: "MCP", icon: Plug },
 ];
 
 export function MainShell() {
@@ -29,7 +31,7 @@ export function MainShell() {
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <TopBar onOpenSql={() => setTab("sql")} />
+      <TopBar onOpenSql={() => setTab("sql")} onOpenMcp={() => setTab("mcp")} />
       <div className="flex min-h-0 flex-1">
         <Sidebar />
         <main className="flex min-w-0 flex-1 flex-col">
@@ -59,6 +61,9 @@ export function MainShell() {
           </div>
           <div className={cn("min-h-0 flex-1", tab !== "info" && "hidden")}>
             <InfoTab />
+          </div>
+          <div className={cn("min-h-0 flex-1", tab !== "mcp" && "hidden")}>
+            <McpTab />
           </div>
         </main>
       </div>

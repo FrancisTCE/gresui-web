@@ -36,6 +36,8 @@ Requires Node.js 22+.
 - EXPLAIN support
 - Full CRUD operations (insert, update, delete)
 - Dark and light themes
+- **MCP server** — exposes the connected database to AI clients (Claude
+  Desktop, Cursor, …) with per-key tool scopes and table allowlists
 
 ## Prerequisites
 
@@ -93,12 +95,72 @@ tools, file indexing, casual reads). It does not defend against full compromise
 of the running app or, on Linux, same-user processes — the Secret Service
 answers the same user without prompting.
 
+## MCP (Model Context Protocol)
+
+Adds an MCP service layer to the tables you choose — it's fancy.
+
+gresui ships a built-in MCP server that exposes the database you're connected
+to as read-only tools for AI clients (Claude Desktop, Cursor, any MCP client).
+No separate server to install, nothing to configure by hand: open the app,
+connect to your database, hit the **MCP** button in the top bar, enable the
+server, and create an API key.
+
+### What you get
+
+| Tool             | What it does                                        |
+|------------------|-----------------------------------------------------|
+| `list_schemas`   | All non-system schemas in the connected database    |
+| `list_tables`    | Tables/views in a schema (respects the key's table allowlist) |
+| `get_table`      | Columns, primary keys, row estimate for a table     |
+| `get_rows`       | Fetch rows with optional `where` (raw SQL), `orderBy`, `limit`, `offset` |
+| `row_count`      | Exact row count, optionally filtered                |
+| `list_indexes`   | Indexes on a table with their definitions           |
+| `get_status`     | Connection status (never throws)                    |
+
+Every key is a **bearer API key** that can be scoped to a subset of the tools
+and optionally restricted to specific `schema.table` names — so you can hand
+Claude exactly the tables you want it to see and nothing else. Tools are
+read-only by construction: there is no `run_sql`, and the table allowlist is
+enforced on every call. The tools run against the app's active connection, so
+disconnect and they answer "Not connected" until you reconnect.
+
+### Setup
+
+1. Launch gresui and connect to your database.
+2. Click **MCP** in the top bar (left of "Open SQL"), then **Enable**.
+3. **New Key** — name it, pick tool scopes (or "Select all"), optionally
+   restrict tables, and copy the generated key (shown once).
+4. Add the copied config to your MCP client. Claude Desktop example
+   (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "gresui": {
+      "url": "http://127.0.0.1:3939/mcp",
+      "headers": { "Authorization": "Bearer <KEY>" }
+    }
+  }
+}
+```
+
+The server listens on `127.0.0.1:3939` (loopback only — never exposed to the
+network); if the port is taken it falls back to a random port, and the URL
+shown in the MCP page is always the authoritative one. Disabled by default;
+the toggle persists across restarts. Keys are stored encrypted at rest with
+the same machinery as connection passwords. `get_rows`/`row_count` take raw
+SQL in `where` — same trust level as the filter bar, so give keys only to
+clients you trust with that database.
+
 ## Architecture
 
 The backend (`backend/main.ts`, `backend/`) is a Bun process running a
 loopback-only HTTP static file server (never exposed beyond `127.0.0.1`) and a
 PostgreSQL driver wrapper (`postgres.js`). It serves the prebuilt React app and
 exposes a typed JSON-RPC endpoint (`/rpc`) that the frontend calls over HTTP.
+When enabled, it also runs the MCP server (`backend/mcp.ts`) on loopback port
+3939, which authenticates per-request bearer keys against encrypted key
+storage and dispatches read-only tool calls to the same active session.
 
 The frontend (`web/src/`) is a React 19 SPA built with Vite 7, Tailwind CSS 4,
 and Radix UI primitives. It runs in your browser and talks to the backend
@@ -113,8 +175,8 @@ between backend and frontend.
 |-----------------------|-----------------------------------|
 | Bun                   | React 19                          |
 | postgres.js           | Vite 7                            |
-|                       | Tailwind CSS 4                    |
-|                       | Radix UI                          |
+| @modelcontextprotocol/sdk | Tailwind CSS 4                 |
+| zod                   | Radix UI                          |
 |                       | CodeMirror (SQL editor)           |
 |                       | TanStack Table / Virtual          |
 

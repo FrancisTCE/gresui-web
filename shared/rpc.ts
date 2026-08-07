@@ -9,8 +9,13 @@ import type {
   CellValue,
   ConnectionConfig,
   ConnStatus,
+  ExportRequest,
+  ExportResponse,
   HistoryEntry,
   IndexInfo,
+  McpKeyInfo,
+  McpServerInfo,
+  McpToolInfo,
   QueryResult,
   RelationInfo,
   Row,
@@ -35,6 +40,7 @@ export interface Bindings {
   listIndexes(schema: string, table: string): Promise<IndexInfo[]>;
   getRowCount(schema: string, table: string): Promise<number>; // exact count
   browse(req: BrowseRequest): Promise<BrowseResponse>;
+  exportTable(req: ExportRequest): Promise<ExportResponse>;
   insertRow(
     schema: string,
     table: string,
@@ -59,4 +65,11 @@ export interface Bindings {
   logError(message: string): Promise<void>;
   listHistory(): Promise<HistoryEntry[]>;
   clearHistory(): Promise<void>;
+  getMcpServerInfo(): Promise<McpServerInfo>;
+  setMcpEnabled(enabled: boolean): Promise<McpServerInfo>;
+  listMcpTools(): Promise<McpToolInfo[]>; // full catalog, for scope checkboxes
+  listMcpKeys(): Promise<McpKeyInfo[]>;
+  createMcpKey(req: { name: string; scopes: string[]; tables: string[] }): Promise<McpKeyInfo>;
+  updateMcpKey(id: string, patch: { name?: string; scopes?: string[]; tables?: string[] }): Promise<McpKeyInfo>;
+  deleteMcpKey(id: string): Promise<void>;
 }

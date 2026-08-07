@@ -23,6 +23,7 @@ import type {
 } from "../shared/types.ts";
 import * as config from "./config.ts";
 import * as data from "./data.ts";
+import * as mcp from "./mcp.ts";
 import * as meta from "./meta.ts";
 import { PgSession } from "./pg.ts";
 import * as sql from "./sql.ts";
@@ -182,6 +183,13 @@ function statusOf(s: PgSession): ConnStatus {
   };
 }
 
+// MCP tools run against the app's active session — same trust boundary as
+// the SQL tab (the operator of gresui decides what MCP clients may see).
+const mcpCtx: mcp.Ctx = {
+  getSession: () => sess(),
+  getStatus: () => (session ? statusOf(session) : { connected: false }),
+};
+
 // --- bindings ---------------------------------------------------------------
 
 const bindings: Bindings = {
@@ -231,6 +239,8 @@ const bindings: Bindings = {
 
   browse: (req) => data.browse(sess(), req),
 
+  exportTable: (req) => data.exportTable(sess(), req),
+
   insertRow: (
     schema: string,
     table: string,
@@ -265,6 +275,32 @@ const bindings: Bindings = {
   listHistory: () => config.listHistory(),
 
   clearHistory: () => config.clearHistory(),
+
+  getMcpServerInfo: () => Promise.resolve(mcp.getInfo()),
+
+  setMcpEnabled: async (enabled: boolean) => {
+    await config.setMcpEnabled(enabled);
+    if (enabled) mcp.start(mcpCtx);
+    else mcp.stop();
+    return mcp.getInfo();
+  },
+
+  listMcpTools: () =>
+    Promise.resolve(mcp.MCP_TOOLS.map(({ name, description }) => ({ name, description }))),
+
+  listMcpKeys: () => config.listMcpKeys(),
+
+  createMcpKey: (req) => {
+    mcp.validateMcpKeyInput(req);
+    return config.createMcpKey(req);
+  },
+
+  updateMcpKey: (id, patch) => {
+    mcp.validateMcpKeyInput(patch);
+    return config.updateMcpKey(id, patch);
+  },
+
+  deleteMcpKey: (id) => config.deleteMcpKey(id),
 };
 
 // --- HTTP RPC ---------------------------------------------------------------
@@ -343,6 +379,12 @@ const PORT = server.port;
 setupLogging();
 
 console.log(`GRESUI running at http://127.0.0.1:${PORT}/ — press Ctrl+C to stop`);
+
+// Re-bind the MCP listener at boot when it was enabled (persisted flag).
+if (await config.getMcpEnabled()) {
+  const port = mcp.start(mcpCtx);
+  console.log(`MCP server at http://127.0.0.1:${port}/mcp`);
+}
 
 // Open the default browser (best-effort).
 try {

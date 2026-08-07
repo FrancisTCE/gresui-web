@@ -21,11 +21,14 @@ import {
   statSync,
 } from "node:fs";
 
+import { timingSafeEqual } from "node:crypto";
+
 import { decryptSecret, encryptSecret, loadKey } from "./secret.ts";
 import type { KeySource } from "./secret.ts";
 import type {
   ConnectionConfig,
   HistoryEntry,
+  McpKeyInfo,
   Settings,
   SettingsPatch,
 } from "../shared/types.ts";
@@ -215,6 +218,15 @@ function initSchema(db: Database): void {
       text TEXT NOT NULL,
       ts TEXT NOT NULL,
       duration_ms INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS mcp_keys (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      key_enc TEXT NOT NULL,
+      scopes TEXT NOT NULL,
+      tables TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      last_used_at TEXT
     );
   `);
 }
@@ -438,4 +450,144 @@ export async function pushHistory(entry: HistoryEntry): Promise<void> {
 export async function clearHistory(): Promise<void> {
   await ensureReady();
   state().db.prepare("DELETE FROM history").run();
+}
+
+// --- MCP --------------------------------------------------------------------
+
+const MCP_ENABLED_ROW = "mcp.enabled";
+
+export async function getMcpEnabled(): Promise<boolean> {
+  await ensureReady();
+  const row = state().db.prepare("SELECT value FROM settings WHERE key = ?")
+    .get(MCP_ENABLED_ROW) as { value?: string } | null;
+  return row?.value === "1";
+}
+
+export async function setMcpEnabled(v: boolean): Promise<void> {
+  await ensureReady();
+  state().db.prepare(
+    "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+  ).run(MCP_ENABLED_ROW, v ? "1" : "0");
+}
+
+function generateApiKey(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return "gresui_" + btoa(String.fromCharCode(...bytes))
+    .replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+}
+
+/** Constant-time-ish compare (length check first — timingSafeEqual throws on
+ * unequal lengths, and lengths of valid keys are identical anyway). */
+function timingSafeEqualStr(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
+function rowToMcpKey(
+  r: Record<string, unknown>,
+  decrypted: string,
+): McpKeyInfo {
+  return {
+    id: String(r.id),
+    name: String(r.name),
+    key: decrypted,
+    scopes: JSON.parse(String(r.scopes)) as string[],
+    tables: JSON.parse(String(r.tables)) as string[],
+    createdAt: String(r.created_at),
+    lastUsedAt: r.last_used_at ? String(r.last_used_at) : null,
+  };
+}
+
+export async function createMcpKey(req: {
+  name: string;
+  scopes: string[];
+  tables: string[];
+}): Promise<McpKeyInfo> {
+  await ensureReady();
+  const { db, key } = state();
+  const raw = generateApiKey();
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO mcp_keys (id, name, key_enc, scopes, tables, created_at, last_used_at)
+     VALUES (?, ?, ?, ?, ?, ?, NULL)`,
+  ).run(
+    id,
+    req.name,
+    await encryptSecret(raw, key),
+    JSON.stringify(req.scopes),
+    JSON.stringify(req.tables),
+    now,
+  );
+  return {
+    id,
+    name: req.name,
+    key: raw,
+    scopes: req.scopes,
+    tables: req.tables,
+    createdAt: now,
+    lastUsedAt: null,
+  };
+}
+
+export async function updateMcpKey(
+  id: string,
+  patch: { name?: string; scopes?: string[]; tables?: string[] },
+): Promise<McpKeyInfo> {
+  await ensureReady();
+  const { db, key } = state();
+  const existing = db.prepare("SELECT * FROM mcp_keys WHERE id = ?")
+    .get(id) as Record<string, unknown> | null;
+  if (!existing) throw new Error(`no such API key: ${id}`);
+  const name = patch.name ?? String(existing.name);
+  const scopes = patch.scopes ?? (JSON.parse(String(existing.scopes)) as string[]);
+  const tables = patch.tables ?? (JSON.parse(String(existing.tables)) as string[]);
+  db.prepare(
+    "UPDATE mcp_keys SET name = ?, scopes = ?, tables = ? WHERE id = ?",
+  ).run(name, JSON.stringify(scopes), JSON.stringify(tables), id);
+  return rowToMcpKey(
+    { ...existing, name, scopes: JSON.stringify(scopes), tables: JSON.stringify(tables) },
+    await decryptSecret(String(existing.key_enc), key),
+  );
+}
+
+export async function deleteMcpKey(id: string): Promise<void> {
+  await ensureReady();
+  state().db.prepare("DELETE FROM mcp_keys WHERE id = ?").run(id);
+}
+
+export async function listMcpKeys(): Promise<McpKeyInfo[]> {
+  await ensureReady();
+  const { db, key } = state();
+  const rows = db
+    .prepare("SELECT * FROM mcp_keys ORDER BY created_at, rowid")
+    .all() as Record<string, unknown>[];
+  return await Promise.all(
+    rows.map(async (r) =>
+      rowToMcpKey(r, await decryptSecret(String(r.key_enc), key))
+    ),
+  );
+}
+
+/** Decrypt-scan lookup by raw key value; never logs the key. */
+export async function findMcpKeyByValue(raw: string): Promise<McpKeyInfo | null> {
+  await ensureReady();
+  const { db, key } = state();
+  const rows = db
+    .prepare("SELECT * FROM mcp_keys")
+    .all() as Record<string, unknown>[];
+  for (const r of rows) {
+    const decrypted = await decryptSecret(String(r.key_enc), key);
+    if (decrypted.length > 0 && timingSafeEqualStr(decrypted, raw)) {
+      return rowToMcpKey(r, decrypted);
+    }
+  }
+  return null;
+}
+
+export async function touchMcpKey(id: string): Promise<void> {
+  await ensureReady();
+  state().db.prepare(
+    "UPDATE mcp_keys SET last_used_at = ? WHERE id = ?",
+  ).run(new Date().toISOString(), id);
 }

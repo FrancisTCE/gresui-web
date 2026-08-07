@@ -1,4 +1,4 @@
-import { Database, LogOut, Moon, SquareTerminal, Sun } from "lucide-react";
+import { Database, LogOut, Moon, Plug, SquareTerminal, Sun } from "lucide-react";
 import { useState } from "react";
 
 import { useAppStore } from "@/AppStore.tsx";
@@ -15,7 +15,13 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.tsx";
 import { call, getBindings } from "@/lib/rpc.ts";
 
-export function TopBar({ onOpenSql }: { onOpenSql(): void }) {
+export function TopBar({
+  onOpenSql,
+  onOpenMcp,
+}: {
+  onOpenSql(): void;
+  onOpenMcp(): void;
+}) {
   const { connStatus, theme, setTheme, setConnStatus, setActive, active, lastActive } = useAppStore();
   const [disconnectOpen, setDisconnectOpen] = useState(false);
 
@@ -73,6 +79,10 @@ export function TopBar({ onOpenSql }: { onOpenSql(): void }) {
           </TooltipTrigger>
           <TooltipContent>Toggle theme</TooltipContent>
         </Tooltip>
+        <Button variant="ghost" size="sm" onClick={onOpenMcp}>
+          <Plug />
+          MCP
+        </Button>
         <Button variant="ghost" size="sm" onClick={onOpenSql}>
           <SquareTerminal />
           Open SQL

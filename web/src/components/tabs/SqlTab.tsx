@@ -7,6 +7,8 @@ import { useAppStore } from "@/AppStore.tsx";
 import { ErrorBanner } from "@/components/ErrorBanner.tsx";
 import { SqlEditor } from "@/components/SqlEditor.tsx";
 import { DataGrid } from "@/components/grid/DataGrid.tsx";
+import { ExportMenu } from "@/components/export/ExportMenu.tsx";
+import { downloadExport, type ExportFormat } from "@/lib/export.ts";
 import { Button } from "@/components/ui/button.tsx";
 import {
   Dialog,
@@ -25,7 +27,7 @@ const PLACEHOLDER = `-- Ctrl/Cmd+Enter to run
 SELECT * FROM app.users LIMIT 50;`;
 
 export function SqlTab() {
-  const { theme } = useAppStore();
+  const { theme, toastStore } = useAppStore();
   const [text, setText] = useState(PLACEHOLDER);
   const [result, setResult] = useState<QueryResult | null>(null);
   const [error, setError] = useState("");
@@ -67,6 +69,14 @@ export function SqlTab() {
   async function clearHistory(): Promise<void> {
     await call(getBindings().clearHistory());
     setHistory([]);
+  }
+
+  function exportResults(format: ExportFormat): void {
+    if (!result || result.columns.length === 0) return;
+    downloadExport(result.columns, result.rows, format, "gresui-query");
+    toastStore.toast({
+      title: `Exported ${result.rows.length.toLocaleString()} row${result.rows.length === 1 ? "" : "s"}`,
+    });
   }
 
   const runCb = useCallback(() => {
@@ -135,7 +145,7 @@ export function SqlTab() {
             Cancel
           </Button>
         ) : null}
-        <Button size="sm" variant="ghost" onClick={() => void openHistory()}>
+        <Button size="sm" variant="secondary" onClick={() => void openHistory()}>
           <History />
           History
         </Button>
@@ -189,6 +199,9 @@ export function SqlTab() {
                     {result.rows.length.toLocaleString()} row
                     {result.rows.length === 1 ? "" : "s"}
                   </span>
+                  <div className="ml-auto">
+                    <ExportMenu onExport={exportResults} />
+                  </div>
                 </>
               ) : (
                 <span

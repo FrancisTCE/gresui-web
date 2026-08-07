@@ -7,32 +7,42 @@ import type {
   BrowseRequest,
   BrowseResponse,
   CellValue,
+  ExportRequest,
+  ExportResponse,
   Row,
 } from "../../shared/types.ts";
 import { quoteIdent, type PgSession } from "./pg.ts";
 
 export const BROWSE_CAP = 10_000;
+export const EXPORT_CAP = 100_000;
+
+/** Shared WHERE/ORDER BY suffix for browse and export. */
+function whereOrderSql(
+  where?: string,
+  orderBy?: { column: string; dir: "asc" | "desc" },
+): string {
+  const w = where && where.trim() ? ` WHERE ${where}` : "";
+  const o = orderBy
+    ? ` ORDER BY ${quoteIdent([orderBy.column])} ${orderBy.dir === "desc" ? "DESC" : "ASC"}`
+    : "";
+  return w + o;
+}
 
 export async function browse(
   s: PgSession,
   req: BrowseRequest,
 ): Promise<BrowseResponse> {
   const q = quoteIdent([req.schema, req.table]);
-  const where = req.where && req.where.trim() ? ` WHERE ${req.where}` : "";
-  const order = req.orderBy
-    ? ` ORDER BY ${quoteIdent([req.orderBy.column])} ${
-      req.orderBy.dir === "desc" ? "DESC" : "ASC"
-    }`
-    : "";
+  const whereOrder = whereOrderSql(req.where, req.orderBy);
   const limit = Math.min(Math.max(1, req.limit || 50), BROWSE_CAP);
   const offset = Math.max(0, Number(req.offset) || 0);
 
   const [data, count] = await Promise.all([
     s.query(
-      `SELECT * FROM ${q}${where}${order} LIMIT $1 OFFSET $2`,
+      `SELECT * FROM ${q}${whereOrder} LIMIT $1 OFFSET $2`,
       [limit, offset],
     ),
-    s.query(`SELECT count(*)::text FROM ${q}${where}`),
+    s.query(`SELECT count(*)::text FROM ${q}${whereOrder}`),
   ]);
 
   return {
@@ -40,6 +50,24 @@ export async function browse(
     rows: data.rows,
     total: Number(count.rows[0]?.[0] ?? 0),
     truncated: limit >= BROWSE_CAP,
+  };
+}
+
+export async function exportTable(
+  s: PgSession,
+  req: ExportRequest,
+): Promise<ExportResponse> {
+  const q = quoteIdent([req.schema, req.table]);
+  const cap = Math.min(Math.max(1, req.maxRows || EXPORT_CAP), EXPORT_CAP);
+  const res = await s.query(
+    `SELECT * FROM ${q}${whereOrderSql(req.where, req.orderBy)} LIMIT $1`,
+    [cap + 1],
+  );
+  const truncated = res.rows.length > cap;
+  return {
+    columns: res.columns,
+    rows: truncated ? res.rows.slice(0, cap) : res.rows,
+    truncated,
   };
 }
 

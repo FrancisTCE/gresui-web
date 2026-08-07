@@ -72,6 +72,21 @@ export interface BrowseResponse {
   truncated: boolean;
 }
 
+export interface ExportRequest {
+  schema: string;
+  table: string;
+  where?: string;
+  orderBy?: { column: string; dir: "asc" | "desc" };
+  /** Optional cap; the backend clamps to EXPORT_CAP. */
+  maxRows?: number;
+}
+
+export interface ExportResponse {
+  columns: { name: string; type: string }[];
+  rows: Row[];
+  truncated: boolean;
+}
+
 export interface QueryResult {
   columns: { name: string; type: string }[];
   rows: Row[];
@@ -95,3 +110,28 @@ export interface Settings {
 export type SettingsPatch = Partial<Omit<Settings, "window">> & {
   window?: Partial<Settings["window"]>;
 };
+
+export interface McpToolInfo {
+  name: string;
+  description: string;
+}
+
+/** Key value is decrypted in-process (frontend is the app's own trust boundary,
+ * same as connection passwords); stored encrypted at rest. */
+export interface McpKeyInfo {
+  id: string;
+  name: string;
+  key: string;
+  /** Tool names this key may call; always non-empty. */
+  scopes: string[];
+  /** "schema.table" allowlist; [] = all tables. */
+  tables: string[];
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+export interface McpServerInfo {
+  enabled: boolean;
+  port: number | null;
+  url: string | null;
+}

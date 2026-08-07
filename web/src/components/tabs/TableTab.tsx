@@ -14,6 +14,8 @@ import { InsertRowDialog } from "@/components/dialogs/InsertRowDialog.tsx";
 import { DataGrid, type SortState } from "@/components/grid/DataGrid.tsx";
 import { FilterBar } from "@/components/grid/FilterBar.tsx";
 import { RowJsonPane } from "@/components/grid/RowJsonPane.tsx";
+import { ExportMenu } from "@/components/export/ExportMenu.tsx";
+import { downloadExport, type ExportFormat } from "@/lib/export.ts";
 import { Button } from "@/components/ui/button.tsx";
 import {
   Dialog,
@@ -36,6 +38,7 @@ export function TableTab() {
   const [filter, setFilter] = useState("");
   const [sort, setSort] = useState<SortState | null>(null);
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [jsonOpen, setJsonOpen] = useState(false);
@@ -191,6 +194,36 @@ export function TableTab() {
     setFilter(f);
   }
 
+  async function exportTable(format: ExportFormat): Promise<void> {
+    if (!active) return;
+    setExporting(true);
+    try {
+      const res = await call(
+        getBindings().exportTable({
+          schema: active.schema,
+          table: active.table,
+          where: filter.trim() ? filter : undefined,
+          orderBy: sort ?? undefined,
+        }),
+      );
+      downloadExport(res.columns, res.rows, format, `${active.schema}.${active.table}`);
+      toastStore.toast({
+        title: `Exported ${res.rows.length.toLocaleString()} row${res.rows.length === 1 ? "" : "s"}`,
+        description: res.truncated
+          ? "Export capped at 100,000 rows — narrow the filter to export less."
+          : undefined,
+      });
+    } catch (e) {
+      toastStore.toast({
+        title: "Export failed",
+        description: (e as Error).message,
+        variant: "destructive",
+      });
+    } finally {
+      setExporting(false);
+    }
+  }
+
   // keyboard shortcuts: Del → delete, Ctrl/Cmd+Shift+R → refresh
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
@@ -270,7 +303,7 @@ export function TableTab() {
         </Tooltip>
         <Button
           size="sm"
-          variant="ghost"
+          variant="secondary"
           onClick={() => setTick((t) => t + 1)}
           disabled={loading}
           title="Refresh (Ctrl/Cmd+Shift+R)"
@@ -278,6 +311,11 @@ export function TableTab() {
           <RefreshCw className={loading ? "animate-spin" : ""} />
           Refresh
         </Button>
+        <ExportMenu
+          onExport={(f) => void exportTable(f)}
+          disabled={loading || exporting || (data?.columns.length ?? 0) === 0}
+          exporting={exporting}
+        />
         <span className="ml-auto pr-1 text-xs text-muted">
           {tableInfo
             ? `${tableInfo.schema}.${tableInfo.table} — ${tableInfo.columns.length} columns`
