@@ -1,5 +1,7 @@
 # GRESUI — A fast, friendly PostgreSQL client in your browser
 
+[![npm version](https://img.shields.io/npm/v/gresui-web)](https://www.npmjs.com/package/gresui-web)
+
 gresui is a web app for browsing PostgreSQL databases, built with Bun and
 React. Tbh there was ai coding in this, code was reviewed. I did this because I found
 that I had a necessity for a simpler and good looking postgres client without all the
