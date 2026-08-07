@@ -28,7 +28,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.tsx";
 import { call, getBindings } from "@/lib/rpc.ts";
 
-export function TableTab() {
+export function TableTab({ tabActive }: { tabActive: boolean }) {
   const { active, toastStore } = useAppStore();
 
   const [data, setData] = useState<BrowseResponse | null>(null);
@@ -224,9 +224,12 @@ export function TableTab() {
     }
   }
 
-  // keyboard shortcuts: Del → delete, Ctrl/Cmd+Shift+R → refresh
+  // keyboard shortcuts: Del → delete, Ctrl/Cmd+Shift+R → refresh.
+  // Tabs stay mounted when hidden, so bail unless this tab is the active one —
+  // otherwise Delete would pop the confirm dialog while editing SQL.
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
+      if (!tabActive) return;
       const target = e.target as HTMLElement;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
         return;
@@ -240,7 +243,7 @@ export function TableTab() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selected, readOnly]);
+  }, [active, selected, readOnly]);
 
   if (!active) return <NoTableSelected />;
 

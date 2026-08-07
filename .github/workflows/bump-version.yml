@@ -41,10 +41,13 @@ jobs:
         run: npm ci
 
       - name: Bump version and tag
+        env:
+          BUMP: ${{ inputs.bump }}
         run: |
+          case "$BUMP" in patch|minor|major) ;; *) echo "invalid bump: $BUMP"; exit 1;; esac
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          npm version ${{ inputs.bump }}
+          npm version "$BUMP"
 
       - name: Push commit and tag
         run: |

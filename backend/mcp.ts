@@ -15,6 +15,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 
+import pkg from "../package.json";
 import type { ConnStatus, McpKeyInfo, McpServerInfo } from "../shared/types.ts";
 import * as config from "./config.ts";
 import * as data from "./data.ts";
@@ -71,7 +72,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "get_rows",
     description:
-      "Fetch rows from a table. `where` is raw SQL (same trust level as the filter bar in gresui) — e.g. \"id > 100\". Result rows are arrays aligned with `columns`; `total` counts matching rows; `truncated` is true when the result was capped.",
+      "Fetch rows from a table. `where` is raw SQL (same trust level as the filter bar in gresui) — e.g. \"id > 100\". Result rows are arrays aligned with `columns`; `total` counts matching rows; `truncated` is true when more rows match than this page returns (use `offset` to page further).",
     inputSchema: {
       schema: z.string(),
       table: z.string(),
@@ -85,14 +86,19 @@ export const MCP_TOOLS: McpTool[] = [
     },
     run: async (args, ctx, key) => {
       checkTable(key, String(args.schema), String(args.table));
-      return await data.browse(ctx.getSession(), {
+      const offset = Number(args.offset ?? 0);
+      const res = await data.browse(ctx.getSession(), {
         schema: String(args.schema),
         table: String(args.table),
         where: typeof args.where === "string" ? args.where : undefined,
         orderBy: args.orderBy as { column: string; dir: "asc" | "desc" } | undefined,
         limit: Number(args.limit ?? 50),
-        offset: Number(args.offset ?? 0),
+        offset,
       });
+      return {
+        ...res,
+        truncated: offset + res.rows.length < res.total,
+      };
     },
   },
   {
@@ -251,6 +257,9 @@ function mcpError(status: number, code: number, message: string): Response {
 
 export async function handleMcp(req: Request, ctx: Ctx): Promise<Response> {
   if (!listener) return new Response("MCP disabled", { status: 403 });
+  if (new URL(req.url).pathname !== "/mcp") {
+    return new Response("Not found", { status: 404 });
+  }
 
   const auth = req.headers.get("authorization") ?? "";
   const raw = auth.startsWith("Bearer ")
@@ -266,7 +275,7 @@ export async function handleMcp(req: Request, ctx: Ctx): Promise<Response> {
 
   // Per-request, stateless server (official example pattern): register only
   // the key's scoped tools, so tools/list shows exactly what the key may call.
-  const server = new McpServer({ name: "gresui", version: "1.0.0" });
+  const server = new McpServer({ name: "gresui", version: pkg.version });
   for (const tool of MCP_TOOLS) {
     if (!keyInfo.scopes.includes(tool.name)) continue;
     server.registerTool(

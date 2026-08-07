@@ -1,6 +1,8 @@
 // McpKeyDialog — create/edit an MCP API key: name, tool scopes, optional
 // "schema.table" allowlist. Create success swaps the body to a one-time view
-// of the generated key (the raw value is never shown again by the backend).
+// of the generated key. The raw value stays recoverable in the UI (Show/Hide
+// in the key list) — the frontend is the app's own trust boundary, same as
+// connection passwords.
 import { Check, Copy } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 

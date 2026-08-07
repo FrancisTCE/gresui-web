@@ -5,8 +5,13 @@ export type ExportFormat = "csv" | "json";
 
 function csvField(v: CellValue): string {
   if (v === null) return '""';
+  // CWE-1236: string cells starting with a formula character (= + - @) become
+  // live formulas in Excel/LibreOffice. Prefix with a single quote so they
+  // import as text. Numbers are left alone (they are data, and the quote
+  // would turn them into text).
   const s = typeof v === "string" ? v : String(v);
-  return `"${s.replaceAll('"', '""')}"`;
+  const safe = typeof v === "string" && /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+  return `"${safe.replaceAll('"', '""')}"`;
 }
 
 /** CSV: UTF-8 BOM, CRLF, header row, every field quoted, quotes doubled. */

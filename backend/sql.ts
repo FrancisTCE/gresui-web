@@ -29,6 +29,17 @@ export async function runSql(
       // EXPLAIN (ANALYZE) EXECUTES the statement — for DML that would mutate
       // real data. Run it inside a transaction and roll back so the plan is
       // measured but nothing persists, even on failure.
+      // A user-supplied COMMIT/ROLLBACK/BEGIN would end the wrapper transaction
+      // and defeat the rollback guarantee, so transaction-control statements
+      // (at statement start, or after a `;`) are rejected outright.
+      if (
+        /(^|;)\s*(BEGIN|START|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|END)\b/i
+          .test(trimmed)
+      ) {
+        throw new Error(
+          "EXPLAIN mode does not support transaction control statements",
+        );
+      }
       let res: QueryOutcome[];
       try {
         res = await s.queryAll(

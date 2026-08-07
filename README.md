@@ -42,6 +42,8 @@ Requires Node.js 22+.
 ## Prerequisites
 
 - [Node.js](https://nodejs.org) 22+
+- [Bun](https://bun.sh) 1.3.x — for `npm run dev` (the published CLI bundles
+  its own Bun runtime, so end users don't need it)
 - [Docker](https://www.docker.com) (optional, for a local test database)
 
 ## Quick start (dev mode)
@@ -119,9 +121,14 @@ server, and create an API key.
 
 Every key is a **bearer API key** that can be scoped to a subset of the tools
 and optionally restricted to specific `schema.table` names — so you can hand
-Claude exactly the tables you want it to see and nothing else. Tools are
-read-only by construction: there is no `run_sql`, and the table allowlist is
-enforced on every call. The tools run against the app's active connection, so
+Claude exactly the tables you want it to query directly and nothing else.
+Tools are read-only by construction: there is no `run_sql`. Two honest
+caveats: the table allowlist gates *direct* table access (a restricted key
+can still read other tables the connected DB user can read via `where`
+subqueries), and `get_rows`/`row_count` take raw SQL in `where` — same trust
+level as the filter bar. Give keys only to clients you trust with the
+connected user's database, and connect with a least-privileged DB user if you
+need real isolation. The tools run against the app's active connection, so
 disconnect and they answer "Not connected" until you reconnect.
 
 ### Setup
@@ -148,9 +155,7 @@ The server listens on `127.0.0.1:3939` (loopback only — never exposed to the
 network); if the port is taken it falls back to a random port, and the URL
 shown in the MCP page is always the authoritative one. Disabled by default;
 the toggle persists across restarts. Keys are stored encrypted at rest with
-the same machinery as connection passwords. `get_rows`/`row_count` take raw
-SQL in `where` — same trust level as the filter bar, so give keys only to
-clients you trust with that database.
+the same machinery as connection passwords.
 
 ## Architecture
 

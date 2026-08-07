@@ -54,10 +54,10 @@ export function MainShell() {
             ))}
           </div>
           <div className={cn("min-h-0 flex-1", tab !== "table" && "hidden")}>
-            <TableTab />
+            <TableTab tabActive={tab === "table"} />
           </div>
           <div className={cn("min-h-0 flex-1", tab !== "sql" && "hidden")}>
-            <SqlTab />
+            <SqlTab active={tab === "sql"} />
           </div>
           <div className={cn("min-h-0 flex-1", tab !== "info" && "hidden")}>
             <InfoTab />

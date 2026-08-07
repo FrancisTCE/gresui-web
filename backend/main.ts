@@ -97,11 +97,16 @@ const FALLBACK_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>G
 
 function serveStatic(req: Request): Response {
   const url = new URL(req.url);
-  let p = decodeURIComponent(url.pathname);
+  let p: string;
+  try {
+    p = decodeURIComponent(url.pathname);
+  } catch {
+    return new Response("Bad Request", { status: 400 });
+  }
   if (p === "/") p = "/index.html";
 
   const filePath = normalize(`${DIST}/${p.replace(/^\/+/, "")}`);
-  if (!filePath.startsWith(`${DIST}/`)) {
+  if (!filePath.startsWith(`${DIST}${path.sep}`)) {
     return new Response("Forbidden", { status: 403 });
   }
 
@@ -334,7 +339,11 @@ async function handleRpc(req: Request): Promise<Response> {
   let method: unknown;
   let args: unknown;
   try {
-    const body: unknown = JSON.parse(await req.text());
+    const raw = await req.text();
+    if (raw.length > 1_000_000) {
+      return rpcError(413, "PayloadTooLarge", "request body too large");
+    }
+    const body: unknown = JSON.parse(raw);
     if (body && typeof body === "object") {
       if ("method" in body) method = body.method;
       if ("args" in body) args = body.args;
@@ -346,10 +355,14 @@ async function handleRpc(req: Request): Promise<Response> {
     return rpcError(400, "BadRequest", "missing method");
   }
 
-  const fn = (bindings as unknown as Record<
-    string,
-    (...a: unknown[]) => Promise<unknown>
-  >)[method];
+  // Own properties only — prototype members (toString, constructor, …) are
+  // not RPC methods.
+  const fn = Object.hasOwn(bindings, method)
+    ? (bindings as unknown as Record<
+        string,
+        (...a: unknown[]) => Promise<unknown>
+      >)[method]
+    : undefined;
   if (!fn) {
     return rpcJson({
       error: { name: "UnknownMethod", message: `no such binding: ${method}` },
@@ -394,7 +407,7 @@ try {
     : process.platform === "win32"
     ? ["cmd", "/c", "start", "", url]
     : ["xdg-open", url];
-  spawn(open[0], { args: open.slice(1), stdio: "ignore" });
+  spawn(open[0], open.slice(1), { stdio: "ignore" });
 } catch {
   // no opener available — the printed URL is enough
 }

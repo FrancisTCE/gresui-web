@@ -26,7 +26,7 @@ import { call, getBindings } from "@/lib/rpc.ts";
 const PLACEHOLDER = `-- Ctrl/Cmd+Enter to run
 SELECT * FROM app.users LIMIT 50;`;
 
-export function SqlTab() {
+export function SqlTab({ active }: { active: boolean }) {
   const { theme, toastStore } = useAppStore();
   const [text, setText] = useState(PLACEHOLDER);
   const [result, setResult] = useState<QueryResult | null>(null);
@@ -104,8 +104,16 @@ export function SqlTab() {
     window.addEventListener("pointerup", onUp);
   }
 
+  // Ctrl/Cmd+Enter runs the query. CodeMirror already binds Mod-Enter inside
+  // the editor (it calls run() and does NOT stop propagation), so when the
+  // editor is focused this listener must stay out of the way — otherwise the
+  // same keystroke would fire run() twice. It only handles the case where
+  // focus is elsewhere in the SQL tab.
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
+      if (!active) return; // tab hidden — never fire from another tab
+      const t = e.target;
+      if (t instanceof Element && t.closest(".cm-content")) return; // editor handled it
       if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
         e.preventDefault();
         void run();
@@ -114,7 +122,7 @@ export function SqlTab() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, running, explain]);
+  }, [active, text, running, explain]);
 
   const isExplain = explain && result !== null && result.command === "EXPLAIN";
 
