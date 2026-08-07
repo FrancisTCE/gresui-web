@@ -1,0 +1,34 @@
+name: publish
+
+# npm publish on version tags. Push a tag (v0.1.7, ...) and this runs
+# `npm publish` using the NPM_TOKEN secret — an npm *automation* token
+# (https://www.npmjs.com/settings/<user>/tokens, "Automation" type), which
+# bypasses 2FA prompts. Create it as a repo secret: Settings → Secrets and
+# variables → Actions → NPM_TOKEN.
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: "https://registry.npmjs.org"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # prepublishOnly runs `npm run build`, so dist/ is built fresh here.
+      - name: Publish to npm
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

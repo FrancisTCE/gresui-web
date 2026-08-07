@@ -1,0 +1,52 @@
+name: bump & publish
+
+# Bump the version, push the tag, and let the publish workflow do the rest.
+# Run it from the Actions tab ("Run workflow" → choose patch/minor/major).
+#
+# This needs a GitHub PAT with "Contents: read and write" on this repo
+# (Settings → Developer settings → Personal access tokens → Fine-grained
+# tokens, repository access: gresui-web, permissions: Contents read/write).
+# Store it as the GH_PAT repo secret — the default GITHUB_TOKEN cannot push
+# back to the repo, which is why the PAT is required here. The tag push then
+# triggers .github/workflows/publish.yml, which publishes to npm with the
+# NPM_TOKEN secret.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Bump version and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          npm version ${{ inputs.bump }}
+
+      - name: Push commit and tag
+        run: |
+          git push
+          git push --tags
