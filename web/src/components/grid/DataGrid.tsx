@@ -13,7 +13,6 @@ import {
 } from "react";
 
 import type { CellValue, Row } from "../../../../shared/types.ts";
-import { Badge } from "@/components/ui/badge.tsx";
 import { cn } from "@/lib/utils.ts";
 
 export interface GridColumn {
@@ -317,11 +316,7 @@ function CellValueView({ value, type }: { value: CellValue; type: string }) {
     return <span className="italic text-muted">null</span>;
   }
   if (typeof value === "boolean") {
-    return (
-      <Badge variant={value ? "default" : "muted"} className="text-[10px]">
-        {String(value)}
-      </Badge>
-    );
+    return <span>{String(value)}</span>;
   }
   if (typeof value === "number") {
     return <span className="font-mono">{value}</span>;
