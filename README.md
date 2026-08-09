@@ -1,4 +1,4 @@
-# GRESUI — A fast, friendly PostgreSQL client in your browser
+# GRESUI — A fast, PostgreSQL client with mcp layer in your browser
 
 [![npm version](https://img.shields.io/npm/v/gresui-web)](https://www.npmjs.com/package/gresui-web)
 
