@@ -1,6 +1,6 @@
 {
   "name": "gresui-web",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "gresui as a web app — a fast, friendly PostgreSQL client in your browser. Adds an MCP service layer to the tables you choose — it's fancy.",
   "type": "module",
   "license": "MIT",
