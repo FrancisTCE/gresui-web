@@ -261,6 +261,7 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
         }}
         onPageChange={setPage}
         truncated={data?.truncated ?? false}
+        columns={tableInfo?.columns ?? []}
       />
 
       {error ? (
