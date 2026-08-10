@@ -407,7 +407,13 @@ try {
     : process.platform === "win32"
     ? ["cmd", "/c", "start", "", url]
     : ["xdg-open", url];
-  spawn(open[0], open.slice(1), { stdio: "ignore" });
+  // A missing opener surfaces as an async "error" event (ENOENT), not a sync
+  // throw — without a handler it becomes an uncaught exception and kills the
+  // server. Never let that happen: the printed URL is enough.
+  const child = spawn(open[0], open.slice(1), { stdio: "ignore" });
+  child.on("error", () => {
+    // no opener available — the printed URL is enough
+  });
 } catch {
   // no opener available — the printed URL is enough
 }
