@@ -66,7 +66,8 @@ function computeSuggestions(
   for (const col of columns) {
     if (!BOOL_RE.test(col.type)) continue;
     if (new RegExp(`^\\s*${escapeRe(col.name)}\\s*(?:=|!=)\\s*$`).test(token)) {
-      return { items: ["true", "false"], tokenStart, meta: ["", ""] };
+      // Insert after the "col op" token — replacing it would drop the column.
+      return { items: ["true", "false"], tokenStart: caret, meta: ["", ""] };
     }
   }
 
@@ -76,7 +77,8 @@ function computeSuggestions(
     const col = columns.find((c) => c.name.toLowerCase() === colMatch[1].toLowerCase());
     if (col) {
       const ops = opsForType(col.type);
-      return { items: ops, tokenStart, meta: ops.map(() => "operator") };
+      // Insert after the column token — replacing it would drop the column.
+      return { items: ops, tokenStart: caret, meta: ops.map(() => "operator") };
     }
   }
 
@@ -224,7 +226,7 @@ export function FilterBar({
             aria-label="Filter (WHERE clause)"
           />
           {suggestions ? (
-            <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-48 overflow-y-auto rounded-md border border-border bg-raised shadow-lg">
+            <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-md border border-border bg-raised shadow-lg">
               {suggestions.items.map((item, i) => (
                 <button
                   key={item}
