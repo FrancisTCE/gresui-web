@@ -29,6 +29,7 @@ import type {
   ConnectionConfig,
   HistoryEntry,
   McpKeyInfo,
+  McpUsageEntry,
   Settings,
   SettingsPatch,
 } from "../shared/types.ts";
@@ -39,6 +40,9 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 export const HISTORY_CAP = 100;
+
+/** Retained window of recorded MCP tool calls (dashboard analytics reflect it). */
+export const MCP_USAGE_CAP = 1000;
 
 /** Config directory. `GRESUI_CONFIG_DIR` overrides (used by tests). */
 export function configDir(): string {
@@ -228,6 +232,14 @@ function initSchema(db: Database): void {
       tables TEXT NOT NULL,
       created_at TEXT NOT NULL,
       last_used_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS mcp_usage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts TEXT NOT NULL,
+      key_id TEXT NOT NULL,
+      tool TEXT NOT NULL,
+      ok INTEGER NOT NULL,
+      duration_ms INTEGER NOT NULL
     );
   `);
   // Idempotent column migration for DBs created before the bundle feature.
@@ -610,4 +622,41 @@ export async function touchMcpKey(id: string): Promise<void> {
   state().db.prepare(
     "UPDATE mcp_keys SET last_used_at = ? WHERE id = ?",
   ).run(new Date().toISOString(), id);
+}
+
+// --- usage recording ----------------------------------------------------------
+
+/** Record one authenticated MCP tool call; cap at MCP_USAGE_CAP, newest kept. */
+export async function recordMcpUsage(e: {
+  keyId: string;
+  tool: string;
+  ok: boolean;
+  durationMs: number;
+}): Promise<void> {
+  await ensureReady();
+  state().db.prepare(
+    "INSERT INTO mcp_usage (ts, key_id, tool, ok, duration_ms) VALUES (?, ?, ?, ?, ?)",
+  ).run(new Date().toISOString(), e.keyId, e.tool, e.ok ? 1 : 0, e.durationMs);
+  state().db.prepare(
+    `DELETE FROM mcp_usage WHERE id NOT IN
+      (SELECT id FROM mcp_usage ORDER BY id DESC LIMIT ?)`,
+  ).run(MCP_USAGE_CAP);
+}
+
+/** Newest first; key names are LEFT JOINed (null after key deletion). */
+export async function listMcpUsage(): Promise<McpUsageEntry[]> {
+  await ensureReady();
+  const rows = state().db.prepare(
+    `SELECT u.ts, u.key_id, u.tool, u.ok, u.duration_ms, k.name AS key_name
+     FROM mcp_usage u LEFT JOIN mcp_keys k ON k.id = u.key_id
+     ORDER BY u.id DESC LIMIT ?`,
+  ).all(MCP_USAGE_CAP) as Record<string, unknown>[];
+  return rows.map((r) => ({
+    ts: String(r.ts),
+    keyId: String(r.key_id),
+    keyName: r.key_name !== null && r.key_name !== undefined ? String(r.key_name) : null,
+    tool: String(r.tool),
+    ok: r.ok === 1,
+    durationMs: Number(r.duration_ms),
+  }));
 }

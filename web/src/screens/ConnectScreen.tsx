@@ -519,7 +519,27 @@ export function ConnectScreen() {
               </Button>
             </div>
             {probeDbs !== null ? (
-              <div className="max-h-40 overflow-y-auto rounded-md border border-border bg-raised p-2">
+              <div className="rounded-md border border-border">
+                <div className="flex items-center justify-between border-b border-border px-2 py-1.5">
+                  <span className="text-xs text-muted">
+                    {probeDbs.length} available
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={probeDbs.every((d) => d === form.database.trim() || form.databases.includes(d))}
+                    onClick={() => {
+                      const anchor = form.database.trim();
+                      const next = probeDbs.filter((d) => d !== anchor);
+                      setForm({ ...form, databases: next });
+                      setDbInput(next.join(", "));
+                    }}
+                  >
+                    Select all
+                  </Button>
+                </div>
+                <div className="max-h-40 overflow-y-auto bg-raised p-2">
                 {probeDbs.map((name) => {
                   const anchor = name === form.database.trim();
                   const checked = anchor || form.databases.includes(name);
@@ -552,6 +572,7 @@ export function ConnectScreen() {
                     </label>
                   );
                 })}
+                </div>
               </div>
             ) : null}
             <Input

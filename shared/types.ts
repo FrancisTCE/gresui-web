@@ -134,6 +134,16 @@ export interface McpKeyInfo {
   lastUsedAt: string | null;
 }
 
+/** One recorded MCP tool call. keyName is null when the key was deleted. */
+export interface McpUsageEntry {
+  ts: string; // ISO
+  keyId: string;
+  keyName: string | null;
+  tool: string;
+  ok: boolean;
+  durationMs: number;
+}
+
 export interface McpServerInfo {
   enabled: boolean;
   port: number | null;

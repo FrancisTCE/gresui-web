@@ -195,8 +195,19 @@ function statusOf(s: PgSession): ConnStatus {
 
 // MCP tools run against the app's active session — same trust boundary as
 // the SQL tab (the operator of gresui decides what MCP clients may see).
+// PgPool.get(db) does NOT validate the name (it connects to any database
+// with the connection credentials), so the configured-database allowlist is
+// enforced here — never reach pool.get with an unlisted name.
 const mcpCtx: mcp.Ctx = {
-  getSession: () => primary(),
+  getSession: async (db?: string) => {
+    if (!pool) throw new Error("Not connected");
+    if (db === undefined) return pool.getPrimary();
+    if (!pool.databases().includes(db)) {
+      throw new Error(`database not in this connection: ${db}`);
+    }
+    return pool.get(db);
+  },
+  getDatabases: () => (pool ? pool.databases() : []),
   getStatus: () => (pool ? statusOf(pool.getPrimary()) : { connected: false }),
 };
 
@@ -316,6 +327,8 @@ const bindings: Bindings = {
     Promise.resolve(mcp.MCP_TOOLS.map(({ name, description }) => ({ name, description }))),
 
   listMcpKeys: () => config.listMcpKeys(),
+
+  listMcpUsage: () => config.listMcpUsage(),
 
   createMcpKey: (req) => {
     mcp.validateMcpKeyInput(req);

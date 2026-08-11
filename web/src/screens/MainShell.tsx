@@ -63,7 +63,7 @@ export function MainShell() {
             <InfoTab />
           </div>
           <div className={cn("min-h-0 flex-1", tab !== "mcp" && "hidden")}>
-            <McpTab />
+            <McpTab tabActive={tab === "mcp"} />
           </div>
         </main>
       </div>

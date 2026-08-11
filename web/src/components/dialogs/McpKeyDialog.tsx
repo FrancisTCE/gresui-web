@@ -20,7 +20,7 @@ import { Input } from "@/components/ui/input.tsx";
 import { Label } from "@/components/ui/label.tsx";
 import { cn } from "@/lib/utils.ts";
 
-const TABLE_RE = /^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$/;
+const TABLE_RE = /^(?:[A-Za-z_][A-Za-z0-9_]*\.)?[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$/;
 
 export function configSnippet(url: string, key: string): string {
   return JSON.stringify(
@@ -44,6 +44,7 @@ export function McpKeyDialog({
   existing,
   tools,
   url,
+  defaultTables,
   onCreate,
   onUpdate,
 }: {
@@ -53,6 +54,8 @@ export function McpKeyDialog({
   existing: McpKeyInfo | null;
   tools: McpToolInfo[];
   url: string | null;
+  /** Create-mode seed for the tables restriction (contextual MCP scope). */
+  defaultTables?: string[];
   onCreate(req: { name: string; scopes: string[]; tables: string[] }): Promise<McpKeyInfo>;
   onUpdate(id: string, patch: { name?: string; scopes?: string[]; tables?: string[] }): Promise<McpKeyInfo>;
 }) {
@@ -86,10 +89,10 @@ export function McpKeyDialog({
       } else {
         setName("");
         setScopes({});
-        setTablesText("");
+        setTablesText((defaultTables ?? []).join(", "));
       }
     }
-  }, [open, mode, existing, tools]);
+  }, [open, mode, existing, tools, defaultTables]);
 
   const scopeCount = Object.values(scopes).filter(Boolean).length;
   const valid = name.trim() !== "" && scopeCount > 0;
@@ -111,7 +114,7 @@ export function McpKeyDialog({
     const entries = parseTables();
     for (const t of entries) {
       if (!TABLE_RE.test(t)) {
-        setTablesError(`"${t}" is not a valid schema.table`);
+        setTablesError(`"${t}" is not a valid schema.table or db.schema.table`);
         return false;
       }
     }
@@ -266,14 +269,14 @@ export function McpKeyDialog({
                     if (tablesError) setTablesError("");
                   }}
                   onBlur={validateTables}
-                  placeholder="public.users, public.orders"
+                  placeholder="public.users, analytics.public.orders"
                   className={cn("font-mono text-xs", tablesError && "border-danger")}
                 />
                 {tablesError ? (
                   <p className="text-xs text-danger">{tablesError}</p>
                 ) : (
                   <p className="text-xs text-muted">
-                    Comma-separated schema.table names; empty = all tables.
+                    Comma-separated schema.table or db.schema.table names; no database prefix = the anchor database; empty = all tables.
                   </p>
                 )}
               </div>
