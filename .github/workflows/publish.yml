@@ -1,22 +1,30 @@
 name: publish
 
-# npm publish on version tags. Push a tag (v0.1.7, ...) and this runs
-# `npm publish` using the NPM_TOKEN secret — an npm *automation* token
+# npm publish when a GitHub Release is published. Create a release from a
+# v* tag (Releases → "Draft a new release") and this runs `npm publish`
+# using the NPM_TOKEN secret — an npm *automation* token
 # (https://www.npmjs.com/settings/<user>/tokens, "Automation" type), which
-# bypasses 2FA prompts. Create it as a repo secret: Settings → Secrets and
-# variables → Actions → NPM_TOKEN.
+# bypasses 2FA prompts. Store it in the "NPM" environment: Settings →
+# Environments → NPM → secrets.
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types: [published]
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # NPM_TOKEN lives in the "NPM" GitHub environment — a job must declare
+    # the environment for its secrets to be visible (repo secrets still
+    # resolve; environment secrets layer on top).
+    environment: NPM
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Build + publish the exact released tag, not whatever the default
+          # branch happens to be when the release is published.
+          ref: ${{ github.event.release.tag_name }}
 
       - uses: actions/setup-node@v4
         with:
@@ -28,6 +36,11 @@ jobs:
         run: npm ci
 
       # prepublishOnly runs `npm run build`, so dist/ is built fresh here.
+      - name: Check NPM_TOKEN is set
+        env:
+          TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          test -n "$TOKEN" || { echo "NPM_TOKEN is empty — add it to the NPM environment (Settings → Environments → NPM)"; exit 1; }
       - name: Publish to npm
         run: npm publish
         env:
