@@ -187,3 +187,61 @@ export class PgSession {
     if (sql) await sql.end().catch(() => {});
   }
 }
+
+/** One connection per database on the same server: the anchor `database`
+ * plus the bundled `databases`. Sessions are created lazily on first use;
+ * the anchor is connected eagerly by the caller (see main.ts `connect`). */
+export class PgPool {
+  private cfg: ConnectionConfig;
+  private sessions = new Map<string, PgSession>();
+  private connecting = new Map<string, Promise<PgSession>>();
+
+  constructor(cfg: ConnectionConfig) {
+    this.cfg = cfg;
+  }
+
+  /** Anchor first, then the bundle; exact-match dedupe; empties dropped. */
+  databases(): string[] {
+    const out: string[] = [];
+    for (const d of [this.cfg.database || "postgres", ...(this.cfg.databases ?? [])]) {
+      if (d && !out.includes(d)) out.push(d);
+    }
+    return out;
+  }
+
+  /** Lazy per-db connect, cached; concurrent callers share one in-flight connect. */
+  async get(db: string): Promise<PgSession> {
+    const cached = this.sessions.get(db);
+    if (cached) return cached;
+    const inflight = this.connecting.get(db);
+    if (inflight) return inflight;
+    const p = (async () => {
+      const s = new PgSession({ ...this.cfg, database: db });
+      try {
+        await s.connect();
+      } catch (e) {
+        this.connecting.delete(db);
+        throw e;
+      }
+      this.sessions.set(db, s);
+      this.connecting.delete(db);
+      return s;
+    })();
+    this.connecting.set(db, p);
+    return p;
+  }
+
+  /** Sync access to the anchor session (connected eagerly at connect()). */
+  getPrimary(): PgSession {
+    const s = this.sessions.get(this.databases()[0]);
+    if (!s) throw new Error("Not connected");
+    return s;
+  }
+
+  async close(): Promise<void> {
+    this.connecting.clear();
+    const all = [...this.sessions.values()];
+    this.sessions.clear();
+    await Promise.all(all.map((s) => s.close().catch(() => {})));
+  }
+}

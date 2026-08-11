@@ -207,6 +207,7 @@ function initSchema(db: Database): void {
       password TEXT NOT NULL,
       database TEXT NOT NULL,
       ssl TEXT NOT NULL,
+      databases TEXT,
       last_used TEXT
     );
     CREATE TABLE IF NOT EXISTS settings (
@@ -229,6 +230,11 @@ function initSchema(db: Database): void {
       last_used_at TEXT
     );
   `);
+  // Idempotent column migration for DBs created before the bundle feature.
+  const cols = db.prepare("PRAGMA table_info(connections)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "databases")) {
+    db.exec("ALTER TABLE connections ADD COLUMN databases TEXT");
+  }
 }
 
 /** One-time import of the legacy JSON config files; removes them on success. */
@@ -310,6 +316,17 @@ function migrateLegacy(dir: string, db: Database): void {
 
 function rowToConfig(r: Record<string, unknown>): Omit<ConnectionConfig, "password"> {
   const ssl = r.ssl === "require" || r.ssl === "verify" ? r.ssl : "disable";
+  let databases: string[] | undefined;
+  if (r.databases) {
+    try {
+      const parsed = JSON.parse(String(r.databases));
+      if (Array.isArray(parsed)) {
+        databases = parsed.filter((d): d is string => typeof d === "string" && d !== "");
+      }
+    } catch {
+      // corrupt row → treat as no bundle
+    }
+  }
   return {
     id: String(r.id),
     name: String(r.name),
@@ -318,6 +335,7 @@ function rowToConfig(r: Record<string, unknown>): Omit<ConnectionConfig, "passwo
     user: String(r.user),
     database: String(r.database),
     ssl,
+    ...(databases?.length ? { databases } : {}),
     ...(r.last_used ? { lastUsed: String(r.last_used) } : {}),
   };
 }
@@ -341,8 +359,8 @@ export async function saveConnection(c: ConnectionConfig): Promise<ConnectionCon
   const { db, key } = state();
   const password = await encryptSecret(c.password, key);
   db.prepare(
-    `INSERT INTO connections (id, name, host, port, user, password, database, ssl, last_used)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO connections (id, name, host, port, user, password, database, ssl, databases, last_used)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        name = excluded.name,
        host = excluded.host,
@@ -351,6 +369,7 @@ export async function saveConnection(c: ConnectionConfig): Promise<ConnectionCon
        password = excluded.password,
        database = excluded.database,
        ssl = excluded.ssl,
+       databases = excluded.databases,
        last_used = excluded.last_used`,
   ).run(
     c.id,
@@ -361,6 +380,7 @@ export async function saveConnection(c: ConnectionConfig): Promise<ConnectionCon
     password,
     c.database,
     c.ssl,
+    c.databases?.length ? JSON.stringify(c.databases) : null,
     c.lastUsed ?? null,
   );
   return listConnections();

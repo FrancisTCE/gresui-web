@@ -38,7 +38,9 @@ const SSL_OPTIONS: { value: ConnectionConfig["ssl"]; label: string }[] = [
   { value: "verify", label: "Verify full" },
 ];
 
-function defaults(): Omit<ConnectionConfig, "id"> {
+type ConnectionForm = Omit<ConnectionConfig, "id"> & { databases: string[] };
+
+function defaults(): ConnectionForm {
   return {
     name: "",
     host: "127.0.0.1",
@@ -47,6 +49,7 @@ function defaults(): Omit<ConnectionConfig, "id"> {
     password: "",
     database: "",
     ssl: "disable",
+    databases: [],
   };
 }
 
@@ -66,7 +69,7 @@ function ThemeToggle({ theme, setTheme }: { theme: "dark" | "light"; setTheme(t:
 export function ConnectScreen() {
   const { setConnStatus, toastStore, theme, setTheme } = useAppStore();
   const [connections, setConnections] = useState<ConnectionConfig[]>([]);
-  const [form, setForm] = useState<Omit<ConnectionConfig, "id">>(defaults());
+  const [form, setForm] = useState<ConnectionForm>(defaults());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -74,6 +77,9 @@ export function ConnectScreen() {
   const [portError, setPortError] = useState("");
   const [search, setSearch] = useState("");
   const [pendingDelete, setPendingDelete] = useState<ConnectionConfig | null>(null);
+  const [probeDbs, setProbeDbs] = useState<string[] | null>(null);
+  const [probing, setProbing] = useState(false);
+  const [dbInput, setDbInput] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -107,13 +113,18 @@ export function ConnectScreen() {
       password: c.password,
       database: c.database,
       ssl: c.ssl,
+      databases: c.databases ?? [],
     });
+    setProbeDbs(null);
+    setDbInput((c.databases ?? []).join(", "));
     setError("");
   }
 
   function newConnection(): void {
     setEditingId(null);
     setForm(defaults());
+    setProbeDbs(null);
+    setDbInput("");
     setError("");
   }
 
@@ -148,7 +159,42 @@ export function ConnectScreen() {
       password: form.password,
       database: form.database.trim(),
       ssl: form.ssl,
+      databases: form.databases.filter((d) => d.trim() !== ""),
     };
+  }
+
+  async function probe(): Promise<void> {
+    const port = Number(form.port);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      setPortError("Port must be an integer between 1 and 65535");
+      return;
+    }
+    setPortError("");
+    setProbing(true);
+    setError("");
+    try {
+      const list = await call(getBindings().probeDatabases(buildConfig()));
+      setProbeDbs(list);
+      setDbInput(form.databases.join(", "));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setProbing(false);
+    }
+  }
+
+  function commitDbInput(): void {
+    const anchor = form.database.trim();
+    const seen = new Set<string>();
+    const databases: string[] = [];
+    for (const d of dbInput.split(",")) {
+      const t = d.trim();
+      if (t === "" || t === anchor || seen.has(t)) continue;
+      seen.add(t);
+      databases.push(t);
+    }
+    setForm({ ...form, databases });
+    setDbInput(databases.join(", "));
   }
 
   async function saveOnly(): Promise<void> {
@@ -456,6 +502,68 @@ export function ConnectScreen() {
               placeholder="Required — e.g. flared"
               onChange={(e) => setForm({ ...form, database: e.target.value })}
             />
+          </div>
+          <div className="col-span-2 flex flex-col gap-1.5">
+            <Label>Additional databases</Label>
+            <p className="text-xs text-muted">
+              Bundle other databases on this server into one connection.
+            </p>
+            <div>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void probe()}
+                disabled={probing}
+              >
+                {probing ? "Loading…" : "Load available databases"}
+              </Button>
+            </div>
+            {probeDbs !== null ? (
+              <div className="max-h-40 overflow-y-auto rounded-md border border-border bg-raised p-2">
+                {probeDbs.map((name) => {
+                  const anchor = name === form.database.trim();
+                  const checked = anchor || form.databases.includes(name);
+                  return (
+                    <label
+                      key={name}
+                      className="flex cursor-pointer items-start gap-2 rounded px-1.5 py-1 hover:bg-surface"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={anchor}
+                        onChange={(e) => {
+                          const next = e.target.checked
+                            ? [...form.databases, name]
+                            : form.databases.filter((d) => d !== name);
+                          setForm({ ...form, databases: next });
+                          setDbInput(next.join(", "));
+                        }}
+                        className="mt-0.5 size-4 accent-[var(--accent)]"
+                      />
+                      <span className="min-w-0">
+                        <span className="block font-mono text-xs font-medium text-foreground">
+                          {name}
+                        </span>
+                        {anchor ? (
+                          <span className="block text-[11px] text-muted">(anchor)</span>
+                        ) : null}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : null}
+            <Input
+              id="conn-databases"
+              value={dbInput}
+              onChange={(e) => setDbInput(e.target.value)}
+              onBlur={commitDbInput}
+              placeholder="db1, db2"
+            />
+            <p className="text-xs text-muted">
+              Or type database names manually, comma-separated.
+            </p>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>SSL</Label>

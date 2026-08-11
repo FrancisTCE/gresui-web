@@ -48,7 +48,7 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [tick, setTick] = useState(0);
   const isMounted = useRef(true);
-  const prevTable = useRef<string | null>(null);
+  const prevKey = useRef<string | null>(null);
 
   useEffect(() => {
     isMounted.current = true;
@@ -59,8 +59,9 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
 
   const load = useCallback(async () => {
     if (!active) return;
-    const switched = prevTable.current !== active.table;
-    if (switched) prevTable.current = active.table;
+    const key = `${active.database}:${active.table}`;
+    const switched = prevKey.current !== key;
+    if (switched) prevKey.current = key;
     const effPage = switched ? 0 : page;
     const effFilter = switched ? "" : filter;
     const effSort = switched ? null : sort;
@@ -79,7 +80,7 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
       const b = getBindings();
       const [browse, info] = await Promise.all([
         call(
-          b.browse({
+          b.browse(active.database, {
             schema: active.schema,
             table: active.table,
             where: effFilter || undefined,
@@ -88,7 +89,7 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
             offset: effPage * pageSize,
           }),
         ),
-        call(b.getTableInfo(active.schema, active.table)),
+        call(b.getTableInfo(active.database, active.schema, active.table)),
       ]);
       if (!isMounted.current) return;
       setData(browse);
@@ -132,6 +133,7 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
       const pkValues = pkIdx.map((i) => row[i] ?? null);
       await call(
         getBindings().updateRow(
+          active.database,
           active.schema,
           active.table,
           tableInfo.pkColumns,
@@ -161,6 +163,7 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
       const rows = [...selected].map((i) => pkIdx.map((j) => data!.rows[i][j] ?? null));
       const n = await call(
         getBindings().deleteRows(
+          active.database,
           active.schema,
           active.table,
           tableInfo.pkColumns,
@@ -183,7 +186,7 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
 
   async function insertRow(values: Record<string, CellValue>): Promise<void> {
     if (!active) return;
-    await call(getBindings().insertRow(active.schema, active.table, values));
+    await call(getBindings().insertRow(active.database, active.schema, active.table, values));
     toastStore.toast({ title: "Row inserted" });
     setPage(0);
     await load();
@@ -199,7 +202,7 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
     setExporting(true);
     try {
       const res = await call(
-        getBindings().exportTable({
+        getBindings().exportTable(active.database, {
           schema: active.schema,
           table: active.table,
           where: filter.trim() ? filter : undefined,

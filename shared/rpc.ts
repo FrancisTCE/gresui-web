@@ -33,20 +33,25 @@ export interface Bindings {
   connect(c: ConnectionConfig): Promise<ConnStatus>; // throws {name, message} on failure
   disconnect(): Promise<void>;
   getStatus(): Promise<ConnStatus>;
+  /** Databases available on the active connection (anchor + bundle). */
   listDatabases(): Promise<string[]>;
+  /** Databases on the given server config — temporary connection, no state change. */
+  probeDatabases(cfg: ConnectionConfig): Promise<string[]>;
   listSchemas(db: string): Promise<string[]>;
-  listRelations(schema: string): Promise<RelationInfo[]>;
-  getTableInfo(schema: string, table: string): Promise<TableInfo>;
-  listIndexes(schema: string, table: string): Promise<IndexInfo[]>;
-  getRowCount(schema: string, table: string): Promise<number>; // exact count
-  browse(req: BrowseRequest): Promise<BrowseResponse>;
-  exportTable(req: ExportRequest): Promise<ExportResponse>;
+  listRelations(db: string, schema: string): Promise<RelationInfo[]>;
+  getTableInfo(db: string, schema: string, table: string): Promise<TableInfo>;
+  listIndexes(db: string, schema: string, table: string): Promise<IndexInfo[]>;
+  getRowCount(db: string, schema: string, table: string): Promise<number>; // exact count
+  browse(db: string, req: BrowseRequest): Promise<BrowseResponse>;
+  exportTable(db: string, req: ExportRequest): Promise<ExportResponse>;
   insertRow(
+    db: string,
     schema: string,
     table: string,
     values: Record<string, CellValue>,
   ): Promise<Row>;
   updateRow(
+    db: string,
     schema: string,
     table: string,
     pkColumns: string[],
@@ -54,6 +59,7 @@ export interface Bindings {
     changes: Record<string, CellValue>,
   ): Promise<Row>;
   deleteRows(
+    db: string,
     schema: string,
     table: string,
     pkColumns: string[],

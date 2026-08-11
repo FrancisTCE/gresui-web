@@ -26,8 +26,8 @@ export function InfoTab() {
     try {
       const b = getBindings();
       const [i, ix] = await Promise.all([
-        call(b.getTableInfo(active.schema, active.table)),
-        call(b.listIndexes(active.schema, active.table)),
+        call(b.getTableInfo(active.database, active.schema, active.table)),
+        call(b.listIndexes(active.database, active.schema, active.table)),
       ]);
       setInfo(i);
       setIndexes(ix);

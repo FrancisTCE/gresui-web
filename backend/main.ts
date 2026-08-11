@@ -25,7 +25,7 @@ import * as config from "./config.ts";
 import * as data from "./data.ts";
 import * as mcp from "./mcp.ts";
 import * as meta from "./meta.ts";
-import { PgSession } from "./pg.ts";
+import { PgPool, PgSession } from "./pg.ts";
 import * as sql from "./sql.ts";
 
 // --- paths ------------------------------------------------------------------
@@ -155,11 +155,16 @@ function handleRequest(req: Request): Response | Promise<Response> {
 
 // --- session state ----------------------------------------------------------
 
-let session: PgSession | null = null;
+let pool: PgPool | null = null;
 
-function sess(): PgSession {
-  if (!session) throw new Error("Not connected");
-  return session;
+function primary(): PgSession {
+  if (!pool) throw new Error("Not connected");
+  return pool.getPrimary();
+}
+
+async function sessFor(db: string): Promise<PgSession> {
+  if (!pool) throw new Error("Not connected");
+  return pool.get(db);
 }
 
 /** Normalize a thrown value into a plain Error the frontend can surface. */
@@ -191,8 +196,8 @@ function statusOf(s: PgSession): ConnStatus {
 // MCP tools run against the app's active session — same trust boundary as
 // the SQL tab (the operator of gresui decides what MCP clients may see).
 const mcpCtx: mcp.Ctx = {
-  getSession: () => sess(),
-  getStatus: () => (session ? statusOf(session) : { connected: false }),
+  getSession: () => primary(),
+  getStatus: () => (pool ? statusOf(pool.getPrimary()) : { connected: false }),
 };
 
 // --- bindings ---------------------------------------------------------------
@@ -209,68 +214,85 @@ const bindings: Bindings = {
   deleteConnection: (id: string) => config.deleteConnection(id),
 
   connect: async (c: ConnectionConfig): Promise<ConnStatus> => {
-    if (session) await session.close().catch(() => {});
-    session = null;
-    const s = new PgSession(c);
-    await s.connect(); // throws with the driver's message on failure
-    session = s;
-    return statusOf(s);
+    if (pool) await pool.close().catch(() => {});
+    pool = null;
+    const p = new PgPool(c);
+    await p.get(p.databases()[0]); // probe + cache the anchor so getPrimary() works
+    pool = p;
+    return statusOf(pool.getPrimary());
   },
 
   disconnect: async (): Promise<void> => {
-    if (session) {
-      await session.close().catch(() => {});
-      session = null;
+    if (pool) {
+      await pool.close().catch(() => {});
+      pool = null;
     }
   },
 
   getStatus: (): Promise<ConnStatus> =>
-    Promise.resolve(session ? statusOf(session) : { connected: false }),
+    Promise.resolve(pool ? statusOf(pool.getPrimary()) : { connected: false }),
 
-  listDatabases: () => Promise.resolve([sess().database]),
+  listDatabases: (): Promise<string[]> => {
+    if (!pool) throw new Error("Not connected");
+    return Promise.resolve(pool.databases());
+  },
 
-  listSchemas: (db: string) => meta.listSchemas(sess(), db),
+  probeDatabases: async (c: ConnectionConfig): Promise<string[]> => {
+    const s = new PgSession({ ...c, database: c.database || "postgres" });
+    try {
+      await s.connect();
+      return await meta.listDatabases(s); // already excludes templates/non-connectable
+    } finally {
+      await s.close().catch(() => {});
+    }
+  },
 
-  listRelations: (schema: string) => meta.listRelations(sess(), schema),
+  listSchemas: async (db: string) => meta.listSchemas(await sessFor(db), db),
 
-  getTableInfo: (schema: string, table: string) =>
-    meta.getTableInfo(sess(), schema, table),
+  listRelations: async (db: string, schema: string) =>
+    meta.listRelations(await sessFor(db), schema),
 
-  listIndexes: (schema: string, table: string) =>
-    meta.listIndexes(sess(), schema, table),
+  getTableInfo: async (db: string, schema: string, table: string) =>
+    meta.getTableInfo(await sessFor(db), schema, table),
 
-  getRowCount: (schema: string, table: string) =>
-    meta.getRowCount(sess(), schema, table),
+  listIndexes: async (db: string, schema: string, table: string) =>
+    meta.listIndexes(await sessFor(db), schema, table),
 
-  browse: (req) => data.browse(sess(), req),
+  getRowCount: async (db: string, schema: string, table: string) =>
+    meta.getRowCount(await sessFor(db), schema, table),
 
-  exportTable: (req) => data.exportTable(sess(), req),
+  browse: async (db: string, req) => data.browse(await sessFor(db), req),
 
-  insertRow: (
+  exportTable: async (db: string, req) => data.exportTable(await sessFor(db), req),
+
+  insertRow: async (
+    db: string,
     schema: string,
     table: string,
     values: Record<string, CellValue>,
-  ) => data.insertRow(sess(), schema, table, values),
+  ) => data.insertRow(await sessFor(db), schema, table, values),
 
-  updateRow: (
+  updateRow: async (
+    db: string,
     schema: string,
     table: string,
     pkColumns: string[],
     pkValues: CellValue[],
     changes: Record<string, CellValue>,
-  ) => data.updateRow(sess(), schema, table, pkColumns, pkValues, changes),
+  ) => data.updateRow(await sessFor(db), schema, table, pkColumns, pkValues, changes),
 
-  deleteRows: (
+  deleteRows: async (
+    db: string,
     schema: string,
     table: string,
     pkColumns: string[],
     rows: CellValue[][],
-  ) => data.deleteRows(sess(), schema, table, pkColumns, rows),
+  ) => data.deleteRows(await sessFor(db), schema, table, pkColumns, rows),
 
   runSql: (text: string, opts?: { explain?: boolean }) =>
-    sql.runSql(sess(), text, opts),
+    sql.runSql(primary(), text, opts),
 
-  cancelQuery: () => sql.cancelQuery(sess()),
+  cancelQuery: () => sql.cancelQuery(primary()),
 
   logError: (message: string) => {
     console.error(`[frontend] ${message}`);

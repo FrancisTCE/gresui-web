@@ -29,7 +29,7 @@ function kindIcon(relKind: RelationKind) {
 }
 
 export function Sidebar() {
-  const { setActive, setConnStatus } = useAppStore();
+  const { setActive, setConnStatus, toastStore } = useAppStore();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [nodes, setNodes] = useState<Record<string, TreeNode[]>>({});
   const [estimates, setEstimates] = useState<Record<string, number | null>>({});
@@ -49,8 +49,7 @@ export function Sidebar() {
         children = schemas.map((name) => ({ kind: "schema", name }));
       } else {
         const [db, schema] = key.split(":");
-        void db;
-        const rels = await call(b.listRelations(schema));
+        const rels = await call(b.listRelations(db, schema));
         children = rels.map((r) => ({
           kind: "relation",
           name: r.name,
@@ -60,7 +59,16 @@ export function Sidebar() {
       setNodes((n) => ({ ...n, [key]: children }));
     } catch (e) {
       setNodes((n) => ({ ...n, [key]: [] }));
-      setConnStatus({ connected: false, error: (e as Error).message });
+      if (key === ROOT_KEY) {
+        setConnStatus({ connected: false, error: (e as Error).message });
+      } else {
+        // A dead bundled db must not mark the whole connection disconnected.
+        toastStore.toast({
+          title: "Failed to load",
+          description: (e as Error).message,
+          variant: "destructive",
+        });
+      }
     } finally {
       setLoading((s) => {
         const next = new Set(s);
@@ -68,7 +76,7 @@ export function Sidebar() {
         return next;
       });
     }
-  }, [setConnStatus]);
+  }, [setConnStatus, toastStore]);
 
   useEffect(() => {
     void load(ROOT_KEY);
@@ -101,7 +109,7 @@ export function Sidebar() {
     const estKey = `${db}:${schema}:${table}`;
     if (!(estKey in estimates)) {
       try {
-        const info = await call(getBindings().getTableInfo(schema, table));
+        const info = await call(getBindings().getTableInfo(db, schema, table));
         setEstimates((m) => ({ ...m, [estKey]: info.rowEstimate }));
       } catch {
         // non-fatal; badge just stays hidden

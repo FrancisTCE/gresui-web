@@ -10,6 +10,10 @@ export interface ConnectionConfig {
   password: string;
   database: string;
   ssl: "disable" | "require" | "verify";
+  /** Additional databases on the same server to bundle into this connection
+   * (besides the anchor `database`); the sidebar shows them as siblings.
+   * Absent/empty = single-database behavior. */
+  databases?: string[];
   lastUsed?: string;
 }
 
