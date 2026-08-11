@@ -7,10 +7,12 @@ import type {
   McpKeyInfo,
   McpServerInfo,
   McpToolInfo,
+  McpUsageEntry,
 } from "../../../../shared/types.ts";
 import { useAppStore } from "@/AppStore.tsx";
 import { Badge } from "@/components/ui/badge.tsx";
 import { Button } from "@/components/ui/button.tsx";
+import { Skeleton } from "@/components/ui/skeleton.tsx";
 import {
   Dialog,
   DialogContent,
@@ -31,8 +33,8 @@ const CLAUDE_SNIPPET = (url: string): string => JSON.stringify({
   },
 }, null, 2);
 
-export function McpTab() {
-  const { connStatus, toastStore } = useAppStore();
+export function McpTab({ tabActive }: { tabActive: boolean }) {
+  const { connStatus, toastStore, active } = useAppStore();
   const [info, setInfo] = useState<McpServerInfo | null>(null);
   const [keys, setKeys] = useState<McpKeyInfo[]>([]);
   const [tools, setTools] = useState<McpToolInfo[]>([]);
@@ -41,18 +43,22 @@ export function McpTab() {
   const [editing, setEditing] = useState<McpKeyInfo | null>(null);
   const [deleting, setDeleting] = useState<McpKeyInfo | null>(null);
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
+  const [createDefaultTables, setCreateDefaultTables] = useState<string[]>([]);
+  const [usage, setUsage] = useState<McpUsageEntry[] | null>(null);
 
   const load = useCallback(async () => {
     const b = getBindings();
     try {
-      const [i, ks, ts] = await Promise.all([
+      const [i, ks, ts, u] = await Promise.all([
         call(b.getMcpServerInfo()),
         call(b.listMcpKeys()),
         call(b.listMcpTools()),
+        call(b.listMcpUsage()),
       ]);
       setInfo(i);
       setKeys(ks);
       setTools(ts);
+      setUsage(u);
     } catch (e) {
       toastStore.toast({
         title: "Failed to load MCP settings",
@@ -65,6 +71,12 @@ export function McpTab() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // The panel stays mounted while other tabs are shown (MainShell toggles
+  // visibility), so re-fetch whenever the MCP tab is (re)opened.
+  useEffect(() => {
+    if (tabActive) void load();
+  }, [tabActive, load]);
 
   async function toggleEnabled(): Promise<void> {
     if (!info) return;
@@ -118,6 +130,21 @@ export function McpTab() {
       setBusy(false);
     }
   }
+
+  // Dashboard breakdowns (count desc); key rows label deleted keys.
+  const toolCounts = new Map<string, number>();
+  const keyCounts = new Map<string, number>();
+  for (const e of usage ?? []) {
+    toolCounts.set(e.tool, (toolCounts.get(e.tool) ?? 0) + 1);
+    const label = e.keyName ?? "deleted key";
+    keyCounts.set(label, (keyCounts.get(label) ?? 0) + 1);
+  }
+  const toolRows = [...toolCounts.entries()].sort((a, b) => b[1] - a[1]);
+  const keyRows = [...keyCounts.entries()].sort((a, b) => b[1] - a[1]);
+  const toolMax = toolRows[0]?.[1] ?? 1;
+  const keyMax = keyRows[0]?.[1] ?? 1;
+  const today = new Date().toISOString().slice(0, 10);
+  const todayCount = usage?.filter((e) => e.ts.slice(0, 10) === today).length ?? 0;
 
   return (
     <div className="h-full overflow-y-auto bg-background p-4">
@@ -190,10 +217,24 @@ export function McpTab() {
 
       {/* Keys */}
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-foreground">
-          API Keys ({keys.length})
-        </h2>
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-semibold text-foreground">
+            API Keys ({keys.length})
+          </h2>
+          {active?.table ? (
+            <Badge variant="secondary" className="font-mono text-[11px]">
+              scoped to {active.database}.{active.schema}.{active.table}
+            </Badge>
+          ) : null}
+        </div>
+        <Button
+          size="sm"
+          onClick={() => {
+            const t = active && active.table ? `${active.database}.${active.schema}.${active.table}` : null;
+            setCreateDefaultTables(t ? [t] : []);
+            setCreateOpen(true);
+          }}
+        >
           <Plus />
           New Key
         </Button>
@@ -285,6 +326,135 @@ export function McpTab() {
         </div>
       )}
 
+      {/* Analytics + usage history */}
+      <div className="mb-5 mt-6">
+        <h2 className="mb-3 text-sm font-semibold text-foreground">
+          Analytics
+        </h2>
+        {usage === null ? (
+          <Skeleton className="h-24 w-full" />
+        ) : usage.length === 0 ? (
+          <p className="text-sm text-muted">
+            No MCP usage yet — connect a client and call a tool.
+          </p>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="rounded-md border border-border bg-raised p-3">
+                <p className="text-xs text-muted">Total requests</p>
+                <p className="text-lg font-semibold text-foreground">
+                  {usage.length}
+                </p>
+              </div>
+              <div className="rounded-md border border-border bg-raised p-3">
+                <p className="text-xs text-muted">Requests today</p>
+                <p className="text-lg font-semibold text-foreground">
+                  {todayCount}
+                </p>
+              </div>
+              <div className="rounded-md border border-border bg-raised p-3">
+                <p className="text-xs text-muted">Tools used</p>
+                <p className="text-lg font-semibold text-foreground">
+                  {new Set(usage.map((e) => e.tool)).size}
+                </p>
+              </div>
+              <div className="rounded-md border border-border bg-raised p-3">
+                <p className="text-xs text-muted">API keys</p>
+                <p className="text-lg font-semibold text-foreground">
+                  {keys.length}
+                </p>
+              </div>
+            </div>
+
+            <h3 className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-muted">
+              By tool
+            </h3>
+            <div className="space-y-1.5">
+              {toolRows.map(([tool, count]) => (
+                <div key={tool} className="flex items-center gap-2">
+                  <span className="w-44 truncate font-mono text-xs text-foreground">
+                    {tool}
+                  </span>
+                  <div className="h-2 flex-1 overflow-hidden rounded bg-surface">
+                    <div
+                      className="h-full rounded bg-accent"
+                      style={{ width: `${(count / toolMax) * 100}%` }}
+                    />
+                  </div>
+                  <span className="w-10 text-right text-xs text-muted">
+                    {count}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <h3 className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-muted">
+              By key
+            </h3>
+            <div className="space-y-1.5">
+              {keyRows.map(([label, count]) => (
+                <div key={label} className="flex items-center gap-2">
+                  <span className="w-44 truncate font-mono text-xs text-foreground">
+                    {label}
+                  </span>
+                  <div className="h-2 flex-1 overflow-hidden rounded bg-surface">
+                    <div
+                      className="h-full rounded bg-accent"
+                      style={{ width: `${(count / keyMax) * 100}%` }}
+                    />
+                  </div>
+                  <span className="w-10 text-right text-xs text-muted">
+                    {count}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <h3 className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-muted">
+              Recent requests
+            </h3>
+            <div className="mb-5 overflow-hidden rounded-md border border-border">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-raised text-left text-xs text-muted">
+                    <th className="px-3 py-1.5 font-medium">Time</th>
+                    <th className="px-3 py-1.5 font-medium">Key</th>
+                    <th className="px-3 py-1.5 font-medium">Tool</th>
+                    <th className="px-3 py-1.5 font-medium">Result</th>
+                    <th className="px-3 py-1.5 font-medium">Duration</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {usage.map((e, i) => (
+                    <tr key={`${e.ts}-${i}`} className="border-t border-border/60">
+                      <td className="px-3 py-1.5 text-muted">
+                        {new Date(e.ts).toLocaleString()}
+                      </td>
+                      <td className="px-3 py-1.5 font-mono text-xs">
+                        {e.keyName ?? "deleted key"}
+                      </td>
+                      <td className="px-3 py-1.5 font-mono text-xs">
+                        {e.tool}
+                      </td>
+                      <td className="px-3 py-1.5 text-xs">
+                        {e.ok ? (
+                          <span className="text-accent">ok</span>
+                        ) : (
+                          <span className="text-danger">error</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-1.5 text-xs text-muted">
+                        {e.durationMs} ms
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
+
       <McpKeyDialog
         open={createOpen || editing !== null}
         onOpenChange={(o) => {
@@ -297,6 +467,7 @@ export function McpTab() {
         existing={editing}
         tools={tools}
         url={info?.url ?? null}
+        defaultTables={createDefaultTables}
         onCreate={async (req) => {
           const created = await call(getBindings().createMcpKey(req));
           setKeys((ks) => [...ks, created]);

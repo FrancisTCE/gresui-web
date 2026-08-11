@@ -16,6 +16,7 @@ import type {
   McpKeyInfo,
   McpServerInfo,
   McpToolInfo,
+  McpUsageEntry,
   QueryResult,
   RelationInfo,
   Row,
@@ -75,6 +76,8 @@ export interface Bindings {
   setMcpEnabled(enabled: boolean): Promise<McpServerInfo>;
   listMcpTools(): Promise<McpToolInfo[]>; // full catalog, for scope checkboxes
   listMcpKeys(): Promise<McpKeyInfo[]>;
+  /** Recorded tool calls, newest first, retained window. */
+  listMcpUsage(): Promise<McpUsageEntry[]>;
   createMcpKey(req: { name: string; scopes: string[]; tables: string[] }): Promise<McpKeyInfo>;
   updateMcpKey(id: string, patch: { name?: string; scopes?: string[]; tables?: string[] }): Promise<McpKeyInfo>;
   deleteMcpKey(id: string): Promise<void>;

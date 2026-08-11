@@ -3,8 +3,10 @@
 //
 // Clients authenticate with per-key bearer API keys (see config.ts); each key
 // is scoped to a subset of the tools below and may carry a "schema.table"
-// allowlist. Tools are read-only. All of them run against the app's active
-// PgSession — with no database connected they error "Not connected".
+// or "db.schema.table" allowlist (unqualified entries mean the anchor
+// database). Tools are read-only. Every table-taking tool accepts an optional
+// `db` argument naming a bundled database (default = anchor); with no
+// database connected they error "Not connected".
 //
 // `where` filters are raw user SQL spliced verbatim — intentional editor
 // semantics (Compass parity), same trust level as the FilterBar / SQL tab.
@@ -23,7 +25,9 @@ import * as meta from "./meta.ts";
 import type { PgSession } from "./pg.ts";
 
 export interface Ctx {
-  getSession(): PgSession; // throws "Not connected" when no DB is connected
+  /** db undefined = the anchor database. Throws "Not connected" / "database not in this connection: …". */
+  getSession(db?: string): Promise<PgSession>;
+  getDatabases(): string[]; // anchor + bundle, configured on the active connection
   getStatus(): ConnStatus; // never throws
 }
 
@@ -39,31 +43,45 @@ export interface McpTool {
 export const MCP_TOOLS: McpTool[] = [
   {
     name: "list_schemas",
-    description: "List all non-system schemas in the connected database.",
-    inputSchema: {},
-    run: async (_args, ctx, _key) => meta.listSchemas(ctx.getSession()),
+    description: "List all non-system schemas in the connected database (default: anchor).",
+    inputSchema: { db: z.string().optional() },
+    run: async (args, ctx, _key) => {
+      const db = args.db !== undefined ? String(args.db) : undefined;
+      const sess = await ctx.getSession(db);
+      return meta.listSchemas(sess);
+    },
   },
   {
     name: "list_tables",
     description:
       "List tables/views in a schema. When the API key has a table allowlist, only allowlisted schema.table relations are returned.",
-    inputSchema: { schema: z.string() },
+    inputSchema: { db: z.string().optional(), schema: z.string() },
     run: async (args, ctx, key) => {
+      const db = args.db !== undefined ? String(args.db) : undefined;
       const schema = String(args.schema);
-      const rels = await meta.listRelations(ctx.getSession(), schema);
+      const sess = await ctx.getSession(db);
+      const rels = await meta.listRelations(sess, schema);
       return rels.filter((r) =>
-        !key.tables.length || key.tables.includes(`${schema}.${r.name}`)
+        !key.tables.length || key.tables.includes(qualify(db, schema, r.name))
       );
     },
   },
   {
+    name: "list_databases",
+    description: "List the databases reachable through this connection (anchor first, then bundled).",
+    inputSchema: {},
+    run: async (_args, ctx, _key) => ctx.getDatabases(),
+  },
+  {
     name: "get_table",
     description: "Describe a table: columns, primary key columns, row estimate.",
-    inputSchema: { schema: z.string(), table: z.string() },
+    inputSchema: { db: z.string().optional(), schema: z.string(), table: z.string() },
     run: async (args, ctx, key) => {
-      checkTable(key, String(args.schema), String(args.table));
+      const db = args.db !== undefined ? String(args.db) : undefined;
+      const sess = await ctx.getSession(db);
+      checkTable(key, db, String(args.schema), String(args.table));
       return await meta.getTableInfo(
-        ctx.getSession(),
+        sess,
         String(args.schema),
         String(args.table),
       );
@@ -74,6 +92,7 @@ export const MCP_TOOLS: McpTool[] = [
     description:
       "Fetch rows from a table. `where` is raw SQL (same trust level as the filter bar in gresui) — e.g. \"id > 100\". Result rows are arrays aligned with `columns`; `total` counts matching rows; `truncated` is true when more rows match than this page returns (use `offset` to page further).",
     inputSchema: {
+      db: z.string().optional(),
       schema: z.string(),
       table: z.string(),
       where: z.string().optional(),
@@ -85,9 +104,11 @@ export const MCP_TOOLS: McpTool[] = [
       offset: z.number().int().min(0).default(0),
     },
     run: async (args, ctx, key) => {
-      checkTable(key, String(args.schema), String(args.table));
+      const db = args.db !== undefined ? String(args.db) : undefined;
+      const sess = await ctx.getSession(db);
+      checkTable(key, db, String(args.schema), String(args.table));
       const offset = Number(args.offset ?? 0);
-      const res = await data.browse(ctx.getSession(), {
+      const res = await data.browse(sess, {
         schema: String(args.schema),
         table: String(args.table),
         where: typeof args.where === "string" ? args.where : undefined,
@@ -106,13 +127,16 @@ export const MCP_TOOLS: McpTool[] = [
     description:
       "Exact count of rows in a table (optionally filtered by `where`, raw SQL).",
     inputSchema: {
+      db: z.string().optional(),
       schema: z.string(),
       table: z.string(),
       where: z.string().optional(),
     },
     run: async (args, ctx, key) => {
-      checkTable(key, String(args.schema), String(args.table));
-      const res = await data.browse(ctx.getSession(), {
+      const db = args.db !== undefined ? String(args.db) : undefined;
+      const sess = await ctx.getSession(db);
+      checkTable(key, db, String(args.schema), String(args.table));
+      const res = await data.browse(sess, {
         schema: String(args.schema),
         table: String(args.table),
         where: typeof args.where === "string" ? args.where : undefined,
@@ -125,11 +149,13 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "list_indexes",
     description: "List indexes on a table with their definitions.",
-    inputSchema: { schema: z.string(), table: z.string() },
+    inputSchema: { db: z.string().optional(), schema: z.string(), table: z.string() },
     run: async (args, ctx, key) => {
-      checkTable(key, String(args.schema), String(args.table));
+      const db = args.db !== undefined ? String(args.db) : undefined;
+      const sess = await ctx.getSession(db);
+      checkTable(key, db, String(args.schema), String(args.table));
       return await meta.listIndexes(
-        ctx.getSession(),
+        sess,
         String(args.schema),
         String(args.table),
       );
@@ -151,11 +177,11 @@ const MCP_TOOL_NAMES: Record<string, true> = Object.fromEntries(
 
 // --- validation (called by the bindings before config writes) ----------------
 
-const TABLE_RE = /^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$/;
+const TABLE_RE = /^(?:[A-Za-z_][A-Za-z0-9_]*\.)?[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$/;
 
 /** Validate only the fields that are defined; throws Error with a specific
  * message. Scopes must be non-empty and known; tables entries must match
- * "schema.table" identifier syntax. */
+ * "db.schema.table" or "schema.table" identifier syntax. */
 export function validateMcpKeyInput(patch: {
   name?: string;
   scopes?: string[];
@@ -178,7 +204,7 @@ export function validateMcpKeyInput(patch: {
     for (const t of patch.tables) {
       if (!TABLE_RE.test(t)) {
         throw new Error(
-          `invalid table restriction: ${t} (expected schema.table)`,
+          `invalid table restriction: ${t} (expected db.schema.table or schema.table)`,
         );
       }
     }
@@ -187,9 +213,15 @@ export function validateMcpKeyInput(patch: {
 
 // --- table gate ---------------------------------------------------------------
 
-function checkTable(key: McpKeyInfo, schema: string, table: string): void {
-  if (key.tables.length > 0 && !key.tables.includes(`${schema}.${table}`)) {
-    throw new Error(`table not allowed for this API key: ${schema}.${table}`);
+/** Allowlist key: unqualified entries mean the anchor database. */
+function qualify(db: string | undefined, schema: string, table: string): string {
+  return db ? `${db}.${schema}.${table}` : `${schema}.${table}`;
+}
+
+function checkTable(key: McpKeyInfo, db: string | undefined, schema: string, table: string): void {
+  const q = qualify(db, schema, table);
+  if (key.tables.length > 0 && !key.tables.includes(q)) {
+    throw new Error(`table not allowed for this API key: ${q}`);
   }
 }
 
@@ -285,12 +317,29 @@ export async function handleMcp(req: Request, ctx: Ctx): Promise<Response> {
         description: tool.description,
         inputSchema: tool.inputSchema,
       },
-      async (args) => ({
-        content: [{
-          type: "text" as const,
-          text: JSON.stringify(await tool.run(args as Record<string, unknown>, ctx, keyInfo)),
-        }],
-      }),
+      async (args) => {
+        const t0 = performance.now();
+        try {
+          const text = JSON.stringify(
+            await tool.run(args as Record<string, unknown>, ctx, keyInfo),
+          );
+          void config.recordMcpUsage({
+            keyId: keyInfo.id,
+            tool: tool.name,
+            ok: true,
+            durationMs: Math.round(performance.now() - t0),
+          }).catch(() => {});
+          return { content: [{ type: "text" as const, text }] };
+        } catch (e) {
+          void config.recordMcpUsage({
+            keyId: keyInfo.id,
+            tool: tool.name,
+            ok: false,
+            durationMs: Math.round(performance.now() - t0),
+          }).catch(() => {});
+          throw e;
+        }
+      },
     );
   }
 
