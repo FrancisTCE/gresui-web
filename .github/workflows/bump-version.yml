@@ -38,11 +38,11 @@ jobs:
           TOKEN: ${{ secrets.GH_PAT }}
         run: |
           test -n "$TOKEN" || { echo "GH_PAT is empty — add it to the NPM environment (Settings → Environments → NPM)"; exit 1; }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           token: ${{ secrets.GH_PAT }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
