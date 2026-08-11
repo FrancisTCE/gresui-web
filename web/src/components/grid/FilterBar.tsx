@@ -3,6 +3,7 @@ import { Filter, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import type { ColumnInfo } from "../../../../shared/types.ts";
+import { BOOL_RE, columnKind } from "./filter-ops.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import {
@@ -16,21 +17,22 @@ import { cn } from "@/lib/utils.ts";
 
 export const PAGE_SIZES = [50, 100, 250, 500];
 
-// Type classifiers — same patterns as InsertRowDialog (not exported there).
-const NUM_RE = /^(int|int2|int4|int8|smallint|integer|bigint|numeric|decimal|real|double|float|money|serial|bigserial)/;
-const BOOL_RE = /^bool(ean)?$/;
-const DATE_RE = /^(date|timestamp|timestamptz)/;
-
 const NUM_OPS = ["=", "!=", "<>", ">", ">=", "<", "<=", "IS NULL", "IS NOT NULL"];
 const TEXT_OPS = ["=", "!=", "<>", "LIKE", "ILIKE", "IS NULL", "IS NOT NULL"];
 const BOOL_OPS = ["=", "!=", "IS NULL", "IS NOT NULL"];
 const DATE_OPS = ["=", "!=", "<>", ">", ">=", "<", "<=", "IS NULL", "IS NOT NULL"];
 
 function opsForType(type: string): string[] {
-  if (NUM_RE.test(type)) return NUM_OPS;
-  if (BOOL_RE.test(type)) return BOOL_OPS;
-  if (DATE_RE.test(type)) return DATE_OPS;
-  return TEXT_OPS;
+  switch (columnKind(type)) {
+    case "num":
+      return NUM_OPS;
+    case "bool":
+      return BOOL_OPS;
+    case "date":
+      return DATE_OPS;
+    default:
+      return TEXT_OPS;
+  }
 }
 
 interface Suggestions {
