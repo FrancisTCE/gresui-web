@@ -13,7 +13,13 @@ import {
 } from "react";
 
 import type { CellValue, Row } from "../../../../shared/types.ts";
+import { CellFilterMenu, HeaderFilterMenu } from "./QuickFilterMenu.tsx";
 import { cn } from "@/lib/utils.ts";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu.tsx";
 
 export interface GridColumn {
   name: string;
@@ -35,6 +41,8 @@ export interface DataGridProps {
   selectable?: boolean;
   sortState?: SortState | null;
   onSortChange?: (s: SortState | null) => void;
+  /** Right-click preset filters (Table tab only). Absent → no context menus. */
+  onQuickFilter?: (clause: string, mode?: "replace" | "append") => void;
   onCommitCell?: (
     row: Row,
     column: string,
@@ -73,6 +81,7 @@ export function DataGrid({
   selectable = false,
   sortState = null,
   onSortChange,
+  onQuickFilter,
   onCommitCell,
   selected,
   onSelectionChange,
@@ -203,7 +212,7 @@ export function DataGrid({
         ) : null}
         {columns.map((c, i) => {
           const sorted = sortState?.column === c.name;
-          return (
+          const cell = (
             <div
               key={c.name}
               className={cn(
@@ -230,6 +239,21 @@ export function DataGrid({
                 ) : null}
               </span>
             </div>
+          );
+          return onQuickFilter ? (
+            <ContextMenu key={c.name}>
+              <ContextMenuTrigger asChild>{cell}</ContextMenuTrigger>
+              <ContextMenuContent>
+                <HeaderFilterMenu
+                  column={c}
+                  sortState={sortState}
+                  onSortChange={onSortChange ?? (() => {})}
+                  onQuickFilter={(clause) => onQuickFilter(clause)}
+                />
+              </ContextMenuContent>
+            </ContextMenu>
+          ) : (
+            cell
           );
         })}
       </div>
@@ -274,29 +298,45 @@ export function DataGrid({
                   />
                 </div>
               ) : null}
-              {columns.map((c, i) => (
-                <div
-                  key={c.name}
-                  data-col={i}
-                  className={cn(
-                    "min-w-0 truncate border-r border-border/60 px-2 py-1 leading-5",
-                    i === widths.length - 1 && "border-r-0",
-                    typeof row[i] === "number" && "text-right font-mono",
-                  )}
-                >
-                  {editing?.row === v.index && editing.col === i ? (
-                    <CellEditor
-                      value={editText}
-                      type={c.type}
-                      onChange={setEditText}
-                      onCommit={() => void commitEdit()}
-                      onCancel={cancelEdit}
-                    />
-                  ) : (
-                    <CellValueView value={row[i] ?? null} type={c.type} />
-                  )}
-                </div>
-              ))}
+              {columns.map((c, i) => {
+                const cell = (
+                  <div
+                    key={c.name}
+                    data-col={i}
+                    className={cn(
+                      "min-w-0 truncate border-r border-border/60 px-2 py-1 leading-5",
+                      i === widths.length - 1 && "border-r-0",
+                      typeof row[i] === "number" && "text-right font-mono",
+                    )}
+                  >
+                    {editing?.row === v.index && editing.col === i ? (
+                      <CellEditor
+                        value={editText}
+                        type={c.type}
+                        onChange={setEditText}
+                        onCommit={() => void commitEdit()}
+                        onCancel={cancelEdit}
+                      />
+                    ) : (
+                      <CellValueView value={row[i] ?? null} type={c.type} />
+                    )}
+                  </div>
+                );
+                return onQuickFilter ? (
+                  <ContextMenu key={c.name}>
+                    <ContextMenuTrigger asChild>{cell}</ContextMenuTrigger>
+                    <ContextMenuContent>
+                      <CellFilterMenu
+                        column={c}
+                        value={row[i] ?? null}
+                        onQuickFilter={onQuickFilter}
+                      />
+                    </ContextMenuContent>
+                  </ContextMenu>
+                ) : (
+                  cell
+                );
+              })}
             </div>
           );
         })}

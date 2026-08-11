@@ -197,6 +197,16 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
     setFilter(f);
   }
 
+  /** Right-click preset filters: replace the WHERE, or AND-append it. */
+  function quickFilter(clause: string, mode: "replace" | "append" = "replace"): void {
+    setPage(0);
+    setFilter(
+      mode === "append" && filter.trim()
+        ? `(${filter.trim()}) AND ${clause}` // parens keep precedence with user clauses like `a OR b`
+        : clause,
+    );
+  }
+
   async function exportTable(format: ExportFormat): Promise<void> {
     if (!active) return;
     setExporting(true);
@@ -342,6 +352,7 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
             setPage(0);
             setSort(s);
           }}
+          onQuickFilter={quickFilter}
           onCommitCell={readOnly ? undefined : commitCell}
           selected={selected}
           onSelectionChange={setSelected}

@@ -42,7 +42,9 @@ export async function browse(
       `SELECT * FROM ${q}${whereOrder} LIMIT $1 OFFSET $2`,
       [limit, offset],
     ),
-    s.query(`SELECT count(*)::text FROM ${q}${whereOrder}`),
+    // count() ignores ORDER BY — including it makes the aggregate query invalid
+    // (`column must appear in the GROUP BY clause`).
+    s.query(`SELECT count(*)::text FROM ${q}${whereOrderSql(req.where)}`),
   ]);
 
   return {
