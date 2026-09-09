@@ -16,6 +16,10 @@ import { quoteIdent, type PgSession } from "./pg.ts";
 export const BROWSE_CAP = 10_000;
 export const EXPORT_CAP = 100_000;
 
+/** Above this planner estimate, count(*) is too slow to run on every page —
+ * browse reports the estimate instead and the UI offers an exact count. */
+export const EXACT_COUNT_MAX = 100_000;
+
 /** Shared WHERE/ORDER BY suffix for browse and export. */
 function whereOrderSql(
   where?: string,
@@ -28,6 +32,70 @@ function whereOrderSql(
   return w + o;
 }
 
+/** Planner row estimate for the filtered relation. Costs a plan, not a scan —
+ * milliseconds even on a 50M-row table, where count(*) takes ~20 seconds.
+ * Returns null when the plan can't be read; callers fall back to an exact count. */
+async function estimateCount(
+  s: PgSession,
+  q: string,
+  where?: string,
+): Promise<number | null> {
+  const res = await s.query(
+    `EXPLAIN (FORMAT JSON) SELECT 1 FROM ${q}${whereOrderSql(where)}`,
+  );
+  const raw = res.rows[0]?.[0];
+  if (typeof raw !== "string") return null;
+  try {
+    // normalizeCell stringifies the json column back to text
+    const plan = JSON.parse(raw) as [{ Plan?: { "Plan Rows"?: unknown } }];
+    const n = plan[0]?.Plan?.["Plan Rows"];
+    return typeof n === "number" && Number.isFinite(n) && n >= 0
+      ? Math.round(n)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function exactCount(
+  s: PgSession,
+  q: string,
+  where?: string,
+): Promise<number> {
+  // count() ignores ORDER BY — including it makes the aggregate query invalid
+  // ("column must appear in the GROUP BY clause").
+  const res = await s.query(`SELECT count(*)::text FROM ${q}${whereOrderSql(where)}`);
+  return Number(res.rows[0]?.[0] ?? 0);
+}
+
+/** Total row count for the browse footer.
+ *
+ * "auto" asks the planner first and only pays for count(*) when the table is
+ * small enough that it is nearly free. An unreadable plan (odd relation kinds,
+ * permission quirks) falls back to the exact count so the number is never
+ * silently wrong. */
+async function countRows(
+  s: PgSession,
+  q: string,
+  where: string | undefined,
+  mode: "auto" | "exact",
+): Promise<{ total: number; estimated: boolean }> {
+  if (mode === "exact") {
+    return { total: await exactCount(s, q, where), estimated: false };
+  }
+  let est: number | null = null;
+  try {
+    est = await estimateCount(s, q, where);
+  } catch {
+    // an invalid WHERE surfaces on the data query instead — fall through
+    est = null;
+  }
+  if (est !== null && est > EXACT_COUNT_MAX) {
+    return { total: est, estimated: true };
+  }
+  return { total: await exactCount(s, q, where), estimated: false };
+}
+
 export async function browse(
   s: PgSession,
   req: BrowseRequest,
@@ -37,21 +105,20 @@ export async function browse(
   const limit = Math.min(Math.max(1, req.limit || 50), BROWSE_CAP);
   const offset = Math.max(0, Number(req.offset) || 0);
 
-  const [data, count] = await Promise.all([
-    s.query(
-      `SELECT * FROM ${q}${whereOrder} LIMIT $1 OFFSET $2`,
-      [limit, offset],
-    ),
-    // count() ignores ORDER BY — including it makes the aggregate query invalid
-    // (`column must appear in the GROUP BY clause`).
-    s.query(`SELECT count(*)::text FROM ${q}${whereOrderSql(req.where)}`),
-  ]);
+  // Sequential, not Promise.all: the session holds a single connection, so
+  // the count would queue behind the rows anyway, and rows-first keeps the
+  // grid honest if the count path throws.
+  const data = await s.query(
+    `SELECT * FROM ${q}${whereOrder} LIMIT $1 OFFSET $2`,
+    [limit, offset],
+  );
+  const count = await countRows(s, q, req.where, req.countMode ?? "auto");
 
   return {
     columns: data.columns,
     rows: data.rows,
-    total: Number(count.rows[0]?.[0] ?? 0),
-    truncated: limit >= BROWSE_CAP,
+    total: count.total,
+    estimated: count.estimated,
   };
 }
 

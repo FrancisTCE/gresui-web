@@ -150,7 +150,7 @@ function Field({
       <Label htmlFor={`f-${name}`} className="flex items-center gap-1.5">
         <span className="truncate">{name}</span>
         {isPk ? (
-          <span className="rounded bg-accent/20 px-1 text-[10px] text-accent">PK</span>
+          <span className="rounded bg-accent-soft px-1 text-[10px] text-accent-text">PK</span>
         ) : null}
         {!notNull ? (
           <span className="text-[10px] font-normal text-muted">nullable</span>

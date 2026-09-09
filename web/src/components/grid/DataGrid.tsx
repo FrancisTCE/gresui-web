@@ -2,9 +2,10 @@
 // Editable mode adds selection + inline cell editing + sorting; SQL results
 // reuse it in read-only mode.
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowDown, ArrowUp, Check, ChevronsUpDown } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronsUpDown, Loader2, Minus } from "lucide-react";
 import {
   memo,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -14,6 +15,7 @@ import {
 
 import type { CellValue, Row } from "../../../../shared/types.ts";
 import { CellFilterMenu, HeaderFilterMenu } from "./QuickFilterMenu.tsx";
+import { isNumericType, MONO_TYPES, valueClass } from "@/lib/pg-types.ts";
 import { cn } from "@/lib/utils.ts";
 import {
   ContextMenu,
@@ -52,16 +54,25 @@ export interface DataGridProps {
   onSelectionChange?: (sel: Set<number>) => void;
   onRowClick?: (row: Row, index: number) => void;
   selectedRowIndex?: number | null;
+  /** Index of the first row on this page, so the gutter can number rows
+   * absolutely rather than restarting at 1 on every page. */
+  rowOffset?: number;
+  /** Rows are being fetched — shows a spinner instead of an "empty" verdict. */
+  loading?: boolean;
+  /** Shown when there are no rows and nothing is loading. */
+  emptyMessage?: string;
   className?: string;
 }
 
 const ROW_H = 28;
-
-const MONO_TYPES =
-  /^(json|jsonb|bytea|uuid|timestamptz|timestamp|date|time|numeric|money|interval|int|int2|int4|int8|float|float4|float8|serial|bigserial)/;
+const GUTTER_W = 46;
+const MIN_COL_W = 56;
+/** Caps for stretching narrow result sets across a wide viewport. */
+const MAX_STRETCH = 2.5;
+const MAX_STRETCH_W = 420;
 
 function estimateWidth(name: string, type: string, samples: CellValue[]): number {
-  const headerLen = name.length;
+  const headerLen = name.length + type.length + 3;
   let max = 0;
   for (const v of samples) {
     if (v === null) continue;
@@ -87,6 +98,9 @@ export function DataGrid({
   onSelectionChange,
   onRowClick,
   selectedRowIndex = null,
+  rowOffset = 0,
+  loading = false,
+  emptyMessage = "No rows.",
   className,
 }: DataGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -101,20 +115,70 @@ export function DataGrid({
     return () => ro.disconnect();
   }, []);
 
+  // Widths the user has dragged, by column name. Cleared when the column set
+  // changes — a width dragged for `rna` means nothing on the next table.
+  const colKey = useMemo(() => columns.map((c) => c.name).join(""), [columns]);
+  const [overrides, setOverrides] = useState<Record<string, number>>({});
+  useEffect(() => {
+    setOverrides({});
+  }, [colKey]);
+
   const widths = useMemo(() => {
     const samples = rows.slice(0, 100);
     const base = columns.map((c, i) =>
       estimateWidth(c.name, c.type, samples.map((r) => r[i] ?? null)),
     );
     const sum = base.reduce((a, b) => a + b, 0);
-    if (viewW > sum && base.length > 0) {
-      const scale = viewW / sum;
-      return base.map((w) => Math.floor(w * scale));
+    let out = base;
+    if (viewW > sum + GUTTER_W && base.length > 0) {
+      // Fill the viewport, but never stretch a column past MAX_STRETCH_W — a
+      // 3-column result used to blow each column up to a third of the screen.
+      const scale = Math.min((viewW - GUTTER_W) / sum, MAX_STRETCH);
+      out = base.map((w) => Math.floor(Math.min(w * scale, MAX_STRETCH_W)));
     }
-    return base;
-  }, [columns, rows, viewW]);
+    // A dragged width always wins over the estimate, at any viewport size.
+    return out.map((w, i) => overrides[columns[i].name] ?? w);
+  }, [columns, rows, viewW, overrides]);
 
-  const totalW = widths.reduce((a, b) => a + b, 0) + (selectable ? 36 : 0);
+  const totalW = widths.reduce((a, b) => a + b, 0) + GUTTER_W;
+
+  const startResize = useCallback(
+    (e: React.PointerEvent, colIdx: number, currentW: number) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const name = columns[colIdx]?.name;
+      if (!name) return;
+      const startX = e.clientX;
+      const onMove = (ev: PointerEvent): void => {
+        setOverrides((o) => ({
+          ...o,
+          [name]: Math.max(MIN_COL_W, Math.round(currentW + (ev.clientX - startX))),
+        }));
+      };
+      const onUp = (): void => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        document.body.style.removeProperty("cursor");
+        document.body.style.removeProperty("user-select");
+      };
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [columns],
+  );
+
+  /** Double-click a resizer: drop the override and go back to auto-fit. */
+  const autoFit = useCallback((colIdx: number) => {
+    const name = columns[colIdx]?.name;
+    if (!name) return;
+    setOverrides((o) => {
+      const next = { ...o };
+      delete next[name];
+      return next;
+    });
+  }, [columns]);
 
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -177,202 +241,273 @@ export function DataGrid({
     else onSortChange(null);
   }
 
-  const gridTemplate = `${selectable ? "36px " : ""}${widths.map((w) => `${w}px`).join(" ")}`;
+  const allSelected = !!selected && selected.size === rows.length && rows.length > 0;
+  const gridTemplate = `${GUTTER_W}px ${widths.map((w) => `${w}px`).join(" ")}`;
 
   return (
-    <div
-      ref={scrollRef}
-      className={cn("relative h-full overflow-auto bg-background", className)}
-    >
-      {/* header */}
-      <div
-        className="sticky top-0 z-20 grid border-b border-border bg-raised text-xs font-medium text-muted"
-        style={{ gridTemplateColumns: gridTemplate, minWidth: totalW }}
-      >
-        {selectable ? (
-          <div className="flex items-center justify-center border-r border-border px-2 py-1">
-            <button
-              type="button"
-              onClick={() => {
-                if (!selected || !onSelectionChange) return;
-                onSelectionChange(
-                  selected.size === rows.length && rows.length > 0
-                    ? new Set()
-                    : new Set(rows.map((_, i) => i)),
-                );
-              }}
-              className="flex size-4 items-center justify-center rounded border border-border bg-background text-accent-fg"
-              aria-label="Select all"
-            >
-              {selected && selected.size === rows.length && rows.length > 0 ? (
-                <Check className="size-3" />
-              ) : null}
-            </button>
+    <div className={cn("relative h-full", className)}>
+      {/* loading veil — the last page stays readable underneath but can never
+          pass for fresh data (a slow count used to leave stale rows on screen) */}
+      {loading
+        ? (
+          <div className="pointer-events-none absolute inset-0 z-30 flex items-start justify-center bg-background/60 animate-fade-in">
+            <span className="mt-16 flex items-center gap-2 rounded-full border border-border-strong bg-overlay px-3 py-1.5 text-xs text-muted shadow-md">
+              <Loader2 className="size-3.5 animate-spin" />
+              Loading…
+            </span>
           </div>
-        ) : null}
-        {columns.map((c, i) => {
-          const sorted = sortState?.column === c.name;
-          const cell = (
-            <div
-              key={c.name}
-              className={cn(
-                "flex min-w-0 items-center gap-1.5 border-r border-border px-2 py-1",
-                onSortChange && "cursor-pointer select-none hover:text-foreground",
-                sorted && "text-accent",
-              )}
-              onClick={() => onSortChange && cycleSort(i)}
-              title={onSortChange ? "Click to sort" : undefined}
-            >
-              <span className="truncate">{c.name}</span>
-              <span className="shrink-0 font-mono text-[10px] text-muted/70">
-                {c.type}
-              </span>
-              <span className="ml-auto shrink-0">
-                {sorted ? (
-                  sortState?.dir === "asc" ? (
-                    <ArrowUp className="size-3" />
-                  ) : (
-                    <ArrowDown className="size-3" />
-                  )
-                ) : onSortChange ? (
-                  <ChevronsUpDown className="size-3 opacity-40" />
-                ) : null}
-              </span>
-            </div>
-          );
-          return onQuickFilter ? (
-            <ContextMenu key={c.name}>
-              <ContextMenuTrigger asChild>{cell}</ContextMenuTrigger>
-              <ContextMenuContent>
-                <HeaderFilterMenu
-                  column={c}
-                  sortState={sortState}
-                  onSortChange={onSortChange ?? (() => {})}
-                  onQuickFilter={(clause) => onQuickFilter(clause)}
-                />
-              </ContextMenuContent>
-            </ContextMenu>
-          ) : (
-            cell
-          );
-        })}
-      </div>
+        )
+        : null}
+      <div ref={scrollRef} className="h-full overflow-auto bg-background">
+        {/* header */}
+        <div
+          className="sticky top-0 z-20 grid select-none border-b border-border bg-raised text-xs font-medium text-muted"
+          style={{ gridTemplateColumns: gridTemplate, minWidth: totalW }}
+        >
+          <div className="sticky left-0 z-10 flex items-center justify-center border-r border-border bg-raised px-2 py-1">
+            {selectable
+              ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!selected || !onSelectionChange) return;
+                    onSelectionChange(
+                      allSelected ? new Set() : new Set(rows.map((_, i) => i)),
+                    );
+                  }}
+                  disabled={rows.length === 0}
+                  className={cn(
+                    "flex size-3.5 items-center justify-center rounded-[3px] border transition-colors",
+                    selected && selected.size > 0
+                      ? "border-accent bg-accent text-accent-fg"
+                      : "border-border-strong bg-background hover:border-accent",
+                    rows.length === 0 && "opacity-40",
+                  )}
+                  aria-label={allSelected ? "Clear selection" : "Select all rows"}
+                >
+                  {selected && selected.size > 0
+                    ? (allSelected
+                      ? <Check className="size-3" />
+                      : <Minus className="size-3" />)
+                    : null}
+                </button>
+              )
+              : <span className="text-[10px] text-subtle">#</span>}
+          </div>
+          {columns.map((c, i) => {
+            const sorted = sortState?.column === c.name;
+            // numeric cells are right-aligned; the header follows them
+            const numeric = isNumericType(c.type);
+            const cell = (
+              <div
+                key={c.name}
+                className={cn(
+                  "group/h relative flex min-w-0 items-center gap-1.5 border-r border-border px-2 py-1",
+                  onSortChange && "cursor-pointer hover:text-foreground",
+                  sorted && "text-accent-text",
+                )}
+                onClick={() => onSortChange && cycleSort(i)}
+                title={onSortChange ? `${c.name} · ${c.type} — click to sort` : `${c.name} · ${c.type}`}
+              >
+                {/* numeric cells are right-aligned; push the label over to meet
+                    them, keeping the name-then-type order every column uses */}
+                <span className={cn("truncate", numeric && "ml-auto")}>{c.name}</span>
+                <span className="shrink-0 font-mono text-[10px] font-normal lowercase text-subtle">
+                  {c.type}
+                </span>
+                <span className={cn("shrink-0", !numeric && "ml-auto")}>
+                  {sorted
+                    ? (sortState?.dir === "asc"
+                      ? <ArrowUp className="size-3" />
+                      : <ArrowDown className="size-3" />)
+                    : onSortChange
+                    ? (
+                      <ChevronsUpDown className="size-3 opacity-0 transition-opacity group-hover/h:opacity-40" />
+                    )
+                    : null}
+                </span>
+                {/* Resizer sits on the seam and swallows the sort click. */}
+                <span
+                  onPointerDown={(e) => startResize(e, i, widths[i])}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    autoFit(i);
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label={`Resize ${c.name}`}
+                  title="Drag to resize · double-click to auto-fit"
+                  className="absolute -right-1 top-0 z-10 h-full w-2 cursor-col-resize"
+                >
+                  <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors hover:bg-accent" />
+                </span>
+              </div>
+            );
+            return onQuickFilter
+              ? (
+                <ContextMenu key={c.name}>
+                  <ContextMenuTrigger asChild>{cell}</ContextMenuTrigger>
+                  <ContextMenuContent>
+                    <HeaderFilterMenu
+                      column={c}
+                      sortState={sortState}
+                      onSortChange={onSortChange ?? (() => {})}
+                      onQuickFilter={(clause) => onQuickFilter(clause)}
+                    />
+                  </ContextMenuContent>
+                </ContextMenu>
+              )
+              : cell;
+          })}
+        </div>
 
-      {/* virtual body */}
-      <div className="relative" style={{ height: virtualizer.getTotalSize(), minWidth: totalW }}>
-        {virtualizer.getVirtualItems().map((v) => {
-          const row = rows[v.index];
-          return (
-            <div
-              key={v.key}
-              className={cn(
-                "absolute left-0 right-0 grid border-b border-border/60 text-[13px]",
-                "hover:bg-surface",
-                (selectedRowIndex === v.index || selected?.has(v.index)) &&
-                  "bg-accent/10",
-              )}
-              style={{
-                top: 0,
-                transform: `translateY(${v.start}px)`,
-                height: ROW_H,
-                gridTemplateColumns: gridTemplate,
-              }}
-              onDoubleClick={(e) => {
-                const cell = (e.target as HTMLElement).closest("[data-col]") as
-                  | HTMLElement
-                  | null;
-                if (cell?.dataset.col !== undefined) {
-                  startEdit(v.index, Number(cell.dataset.col));
-                }
-              }}
-              onClick={() => onRowClick?.(row, v.index)}
-            >
-              {selectable ? (
-                <div className="flex items-center justify-center border-r border-border/60 px-2">
-                  <input
-                    type="checkbox"
-                    checked={selected?.has(v.index) ?? false}
-                    onChange={() => toggleRow(v.index)}
-                    onClick={(e) => e.stopPropagation()}
-                    className="size-3.5 accent-[var(--accent)]"
-                  />
+        {/* virtual body */}
+        <div
+          className="relative"
+          style={{ height: virtualizer.getTotalSize(), minWidth: totalW }}
+        >
+          {virtualizer.getVirtualItems().map((v) => {
+            const row = rows[v.index];
+            const isSelected = selected?.has(v.index) ?? false;
+            const isCursor = selectedRowIndex === v.index;
+            return (
+              <div
+                key={v.key}
+                className={cn(
+                  "group/row absolute left-0 right-0 grid border-b border-border/50 text-[13px]",
+                  isSelected || isCursor
+                    ? "bg-accent-soft"
+                    : "hover:bg-surface/70",
+                )}
+                style={{
+                  top: 0,
+                  transform: `translateY(${v.start}px)`,
+                  height: ROW_H,
+                  gridTemplateColumns: gridTemplate,
+                }}
+                onDoubleClick={(e) => {
+                  const cell = (e.target as HTMLElement).closest("[data-col]") as
+                    | HTMLElement
+                    | null;
+                  if (cell?.dataset.col !== undefined) {
+                    startEdit(v.index, Number(cell.dataset.col));
+                  }
+                }}
+                onClick={() => onRowClick?.(row, v.index)}
+              >
+                {/* Gutter: row number, swapped for the checkbox on hover or
+                    once the row is part of a selection. */}
+                <div
+                  className={cn(
+                    "sticky left-0 z-10 flex items-center justify-center border-r px-2",
+                    isSelected || isCursor
+                      ? "border-border/50 bg-surface-active"
+                      : "border-border/50 bg-background group-hover/row:bg-surface",
+                  )}
+                >
+                  {isSelected ? (
+                    <span
+                      className="absolute inset-y-0 left-0 w-0.5 bg-accent"
+                      aria-hidden
+                    />
+                  ) : null}
+                  {selectable
+                    ? (
+                      <>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleRow(v.index)}
+                          onClick={(e) => e.stopPropagation()}
+                          aria-label={`Select row ${rowOffset + v.index + 1}`}
+                          className={cn(
+                            "size-3.5 accent-[var(--accent)]",
+                            !isSelected && "hidden group-hover/row:block",
+                          )}
+                        />
+                        <span
+                          className={cn(
+                            "font-mono text-[11px] tabular-nums text-subtle",
+                            isSelected ? "hidden" : "group-hover/row:hidden",
+                          )}
+                        >
+                          {rowOffset + v.index + 1}
+                        </span>
+                      </>
+                    )
+                    : (
+                      <span className="font-mono text-[11px] tabular-nums text-subtle">
+                        {rowOffset + v.index + 1}
+                      </span>
+                    )}
                 </div>
-              ) : null}
-              {columns.map((c, i) => {
-                const cell = (
-                  <div
-                    key={c.name}
-                    data-col={i}
-                    className={cn(
-                      "min-w-0 truncate border-r border-border/60 px-2 py-1 leading-5",
-                      i === widths.length - 1 && "border-r-0",
-                      typeof row[i] === "number" && "text-right font-mono",
-                    )}
-                  >
-                    {editing?.row === v.index && editing.col === i ? (
-                      <CellEditor
-                        value={editText}
-                        type={c.type}
-                        onChange={setEditText}
-                        onCommit={() => void commitEdit()}
-                        onCancel={cancelEdit}
-                      />
-                    ) : (
-                      <CellValueView value={row[i] ?? null} type={c.type} />
-                    )}
-                  </div>
-                );
-                return onQuickFilter ? (
-                  <ContextMenu key={c.name}>
-                    <ContextMenuTrigger asChild>{cell}</ContextMenuTrigger>
-                    <ContextMenuContent>
-                      <CellFilterMenu
-                        column={c}
-                        value={row[i] ?? null}
-                        onQuickFilter={onQuickFilter}
-                      />
-                    </ContextMenuContent>
-                  </ContextMenu>
-                ) : (
-                  cell
-                );
-              })}
-            </div>
-          );
-        })}
-        {rows.length === 0 ? (
-          <div className="p-6 text-center text-sm text-muted">
-            No rows match the filter.
-          </div>
-        ) : null}
+                {columns.map((c, i) => {
+                  const cell = (
+                    <div
+                      key={c.name}
+                      data-col={i}
+                      className={cn(
+                        "min-w-0 truncate border-r border-border/40 px-2 py-1 leading-5",
+                        i === widths.length - 1 && "border-r-0",
+                        isNumericType(c.type) && "text-right",
+                      )}
+                    >
+                      {editing?.row === v.index && editing.col === i
+                        ? (
+                          <CellEditor
+                            value={editText}
+                            type={c.type}
+                            onChange={setEditText}
+                            onCommit={() => void commitEdit()}
+                            onCancel={cancelEdit}
+                          />
+                        )
+                        : <CellValueView value={row[i] ?? null} type={c.type} />}
+                    </div>
+                  );
+                  return onQuickFilter
+                    ? (
+                      <ContextMenu key={c.name}>
+                        <ContextMenuTrigger asChild>{cell}</ContextMenuTrigger>
+                        <ContextMenuContent>
+                          <CellFilterMenu
+                            column={c}
+                            value={row[i] ?? null}
+                            onQuickFilter={onQuickFilter}
+                          />
+                        </ContextMenuContent>
+                      </ContextMenu>
+                    )
+                    : cell;
+                })}
+              </div>
+            );
+          })}
+          {rows.length === 0 && !loading
+            ? (
+              <div className="p-10 text-center text-sm text-muted">
+                {emptyMessage}
+              </div>
+            )
+            : null}
+        </div>
       </div>
     </div>
   );
 }
 
-/** Per-type cell rendering. */
+/** Per-type cell rendering. Colour carries the type; there is no chip, because
+ * at 28px rows a background on every mono cell turns the grid into stripes. */
 function CellValueView({ value, type }: { value: CellValue; type: string }) {
-  if (value === null) {
-    return <span className="italic text-muted">null</span>;
-  }
-  if (typeof value === "boolean") {
-    return <span>{String(value)}</span>;
-  }
-  if (typeof value === "number") {
-    return <span className="font-mono">{value}</span>;
-  }
-  const s = value;
-  if (MONO_TYPES.test(type)) {
-    return (
-      <span
-        title={s}
-        className="block truncate rounded bg-code px-1 font-mono text-[12px] text-accent"
-      >
-        {s}
-      </span>
-    );
-  }
-  return <span title={s} className="block truncate">{s}</span>;
+  const cls = valueClass(type, value);
+  if (value === null) return <span className={cls}>null</span>;
+  const s = typeof value === "boolean" ? String(value) : String(value);
+  return (
+    <span title={s} className={cn("block truncate", cls)}>
+      {s}
+    </span>
+  );
 }
 
 const CellEditor = memo(function CellEditor({
@@ -404,7 +539,7 @@ const CellEditor = memo(function CellEditor({
         else if (e.key === "Escape") onCancel();
       }}
       onBlur={onCommit}
-      className="h-6 w-full rounded border border-accent bg-background px-1 font-mono text-[12px] text-foreground focus:outline-none"
+      className="h-6 w-full rounded border border-accent bg-background px-1 font-mono text-[12px] text-foreground outline-none"
     />
   );
 });

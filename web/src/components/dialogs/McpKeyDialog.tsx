@@ -273,7 +273,7 @@ export function McpKeyDialog({
                   className={cn("font-mono text-xs", tablesError && "border-danger")}
                 />
                 {tablesError ? (
-                  <p className="text-xs text-danger">{tablesError}</p>
+                  <p className="text-xs text-danger-text">{tablesError}</p>
                 ) : (
                   <p className="text-xs text-muted">
                     Comma-separated schema.table or db.schema.table names; no database prefix = the anchor database; empty = all tables.

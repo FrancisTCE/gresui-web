@@ -1,4 +1,17 @@
-import { Database, LogOut, Moon, Plug, SquareTerminal, Sun } from "lucide-react";
+// TopBar — identity, breadcrumb to the open relation, command trigger, actions.
+import {
+  ChevronRight,
+  Database,
+  Folder,
+  LogOut,
+  Moon,
+  Plug,
+  Search,
+  SquareTerminal,
+  Sun,
+  Table2,
+  View,
+} from "lucide-react";
 import { useState } from "react";
 
 import { useAppStore } from "@/AppStore.tsx";
@@ -12,17 +25,29 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog.tsx";
+import { Kbd } from "@/components/ui/kbd.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.tsx";
 import { call, getBindings } from "@/lib/rpc.ts";
+import { isMac } from "@/lib/platform.ts";
 
 export function TopBar({
   onOpenSql,
   onOpenMcp,
+  onOpenPalette,
 }: {
   onOpenSql(): void;
   onOpenMcp(): void;
+  onOpenPalette(): void;
 }) {
-  const { connStatus, theme, setTheme, setConnStatus, setActive, active, lastActive } = useAppStore();
+  const {
+    connStatus,
+    theme,
+    setTheme,
+    setConnStatus,
+    setActive,
+    active,
+    lastActive,
+  } = useAppStore();
   const [disconnectOpen, setDisconnectOpen] = useState(false);
 
   async function disconnect(): Promise<void> {
@@ -36,36 +61,85 @@ export function TopBar({
     setActive(null);
   }
 
+  const crumbs = active ?? lastActive;
+  const stale = active === null && lastActive !== null;
+  const RelIcon = crumbs?.kind === "v" || crumbs?.kind === "m" ? View : Table2;
+
   return (
-    <header className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-raised px-3">
-      <div className="flex items-center gap-2">
-        <Database className="size-5 text-accent" />
-        <span className="text-sm font-semibold text-foreground">GRESUI</span>
+    <header className="relative flex h-11 shrink-0 items-center gap-3 border-b border-border bg-raised px-3">
+      <div className="flex shrink-0 items-center gap-2">
+        <div className="flex size-6 items-center justify-center rounded-md bg-accent/15">
+          <Database className="size-3.5 text-accent-text" />
+        </div>
+        <span className="text-[13px] font-semibold tracking-tight text-foreground">
+          GRESUI
+        </span>
       </div>
 
-      {active === null && lastActive ? (
-        <button
-          type="button"
-          onClick={() => setActive(lastActive)}
-          className="flex items-center gap-1.5 rounded-full border border-accent/40 bg-background px-3 py-1 transition-colors hover:bg-surface cursor-pointer"
-          aria-label="Return to last table"
-        >
-          <span className="size-2 rounded-full bg-accent" aria-hidden />
-          <span className="font-mono text-xs text-foreground">
-            {connStatus.user}@{connStatus.host}:{connStatus.port}
-            {connStatus.database ? `/${connStatus.database}` : ""}
-          </span>
-        </button>
-      ) : (
-        <div className="flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1">
-          <span className="size-2 rounded-full bg-accent" aria-hidden />
-          <span className="font-mono text-xs text-foreground">
-            {connStatus.user}@{connStatus.host}:{connStatus.port}
-            {connStatus.database ? `/${connStatus.database}` : ""}
-          </span>
-        </div>
-      )}
-      <div className="flex items-center gap-1">
+      {crumbs
+        ? (
+          <>
+            <div className="h-4 w-px shrink-0 bg-border" />
+            {/* Whole breadcrumb is one control: while the table view is empty
+                it walks back to the relation that was last open. */}
+            <button
+              type="button"
+              onClick={() => stale && setActive(lastActive)}
+              disabled={!stale}
+              title={stale
+                ? `Back to ${crumbs.schema}.${crumbs.table}`
+                : `${crumbs.database} / ${crumbs.schema} / ${crumbs.table}`}
+              className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs transition-colors enabled:hover:bg-surface disabled:cursor-default"
+            >
+              <Database className="size-3 shrink-0 text-subtle" />
+              <span className="max-w-[9rem] truncate text-muted">
+                {crumbs.database}
+              </span>
+              <ChevronRight className="size-3 shrink-0 text-subtle" />
+              <Folder className="size-3 shrink-0 text-subtle" />
+              <span className="max-w-[9rem] truncate text-muted">
+                {crumbs.schema}
+              </span>
+              <ChevronRight className="size-3 shrink-0 text-subtle" />
+              <RelIcon className="size-3 shrink-0 text-accent-text" />
+              <span className="max-w-[14rem] truncate font-medium text-foreground">
+                {crumbs.table}
+              </span>
+            </button>
+          </>
+        )
+        : null}
+
+      {/* Centred independently of the breadcrumb, which changes width as the
+          user moves between relations. */}
+      <button
+        type="button"
+        onClick={onOpenPalette}
+        className="absolute left-1/2 hidden h-7 w-[clamp(180px,22vw,300px)] -translate-x-1/2 items-center gap-2 rounded-md border border-border bg-background px-2.5 text-xs text-subtle transition-colors hover:border-border-strong hover:text-muted lg:flex"
+        aria-label="Open command palette"
+      >
+        <Search className="size-3.5 shrink-0" />
+        <span className="flex-1 text-left">Search tables…</span>
+        <Kbd className="h-4 border-transparent bg-surface px-1 text-[10px]">
+          {isMac() ? "⌘K" : "Ctrl K"}
+        </Kbd>
+      </button>
+
+      <div className="ml-auto flex shrink-0 items-center gap-0.5">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="lg:hidden"
+              onClick={onOpenPalette}
+              aria-label="Search tables"
+            >
+              <Search />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Search tables</TooltipContent>
+        </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -77,7 +151,9 @@ export function TopBar({
               {theme === "dark" ? <Sun /> : <Moon />}
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Toggle theme</TooltipContent>
+          <TooltipContent>
+            {theme === "dark" ? "Light theme" : "Dark theme"}
+          </TooltipContent>
         </Tooltip>
         <Button variant="ghost" size="sm" onClick={onOpenMcp}>
           <Plug />
@@ -85,21 +161,30 @@ export function TopBar({
         </Button>
         <Button variant="ghost" size="sm" onClick={onOpenSql}>
           <SquareTerminal />
-          Open SQL
+          SQL
         </Button>
+        <div className="mx-1 h-4 w-px bg-border" />
         <Dialog open={disconnectOpen} onOpenChange={setDisconnectOpen}>
-          <DialogTrigger asChild>
-            <Button variant="ghost" size="sm">
-              <LogOut />
-              Disconnect
-            </Button>
-          </DialogTrigger>
+          {/* Tooltip must be the outer wrapper: DialogTrigger's asChild needs a
+              DOM node to hand its props to, and Tooltip.Root is not one — with
+              the nesting the other way round the click never reached the
+              button and the dialog never opened. */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DialogTrigger asChild>
+                <Button variant="ghost" size="icon" aria-label="Disconnect">
+                  <LogOut />
+                </Button>
+              </DialogTrigger>
+            </TooltipTrigger>
+            <TooltipContent>Disconnect</TooltipContent>
+          </Tooltip>
           <DialogContent className="max-w-sm">
             <DialogHeader>
               <DialogTitle>Disconnect?</DialogTitle>
               <DialogDescription>
                 Close the connection to{" "}
-                <span className="font-mono">
+                <span className="font-mono text-foreground">
                   {connStatus.host}:{connStatus.port}
                 </span>
                 ?

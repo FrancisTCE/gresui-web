@@ -36,7 +36,7 @@ export class ErrorBoundary extends Component<Props, State> {
     if (!this.state.error) return this.props.children;
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 bg-background p-8 text-center">
-        <AlertTriangle className="size-10 text-danger" />
+        <AlertTriangle className="size-10 text-danger-text" />
         <div>
           <h2 className="text-lg font-semibold text-foreground">
             Something went wrong

@@ -17,10 +17,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 
-import pkg from "../package.json";
+// Node requires the import attribute for JSON; Bun accepted a bare specifier.
+import pkg from "../package.json" with { type: "json" };
 import type { ConnStatus, McpKeyInfo, McpServerInfo } from "../shared/types.ts";
 import * as config from "./config.ts";
 import * as data from "./data.ts";
+import { serve, type Listener } from "./http.ts";
 import * as meta from "./meta.ts";
 import type { PgSession } from "./pg.ts";
 
@@ -90,7 +92,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "get_rows",
     description:
-      "Fetch rows from a table. `where` is raw SQL (same trust level as the filter bar in gresui) — e.g. \"id > 100\". Result rows are arrays aligned with `columns`; `total` counts matching rows; `truncated` is true when more rows match than this page returns (use `offset` to page further).",
+      "Fetch rows from a table. `where` is raw SQL (same trust level as the filter bar in gresui) — e.g. \"id > 100\". Result rows are arrays aligned with `columns`; `total` counts matching rows, but is a planner estimate when `estimated` is true (large relations — call row_count for an exact figure); `truncated` is true when more rows match than this page returns (use `offset` to page further).",
     inputSchema: {
       db: z.string().optional(),
       schema: z.string(),
@@ -229,33 +231,29 @@ function checkTable(key: McpKeyInfo, db: string | undefined, schema: string, tab
 
 export const MCP_PORT_PREFERRED = 3939;
 
-export interface McpListener {
-  port: number;
-  stop(): void;
-}
+let listener: Listener | null = null;
 
-let listener: McpListener | null = null;
-
-export function start(ctx: Ctx): number {
+export async function start(ctx: Ctx): Promise<number> {
   if (listener) return listener.port;
-  const serve = (port: number): McpListener =>
-    Bun.serve({
+  const bind = (port: number): Promise<Listener> =>
+    serve({
       hostname: "127.0.0.1",
       port,
       fetch: (req: Request): Promise<Response> => handleMcp(req, ctx),
     });
   try {
-    listener = serve(MCP_PORT_PREFERRED);
+    listener = await bind(MCP_PORT_PREFERRED);
   } catch {
     // preferred port taken — fall back to a random port
-    listener = serve(0);
+    listener = await bind(0);
   }
   return listener.port;
 }
 
-export function stop(): void {
-  listener?.stop();
+export async function stop(): Promise<void> {
+  const l = listener;
   listener = null;
+  await l?.stop();
 }
 
 export function isRunning(): boolean {

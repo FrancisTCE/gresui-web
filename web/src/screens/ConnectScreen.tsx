@@ -29,7 +29,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select.tsx";
+import { ConnectionStringField } from "@/components/ConnectionStringField.tsx";
 import { ErrorBanner } from "@/components/ErrorBanner.tsx";
+import {
+  looksLikeConnectionString,
+  parseConnectionString,
+  type ParsedConnection,
+} from "@/lib/conn-string.ts";
+import { formatRelativeDate } from "@/lib/format.ts";
 import { call, getBindings } from "@/lib/rpc.ts";
 
 const SSL_OPTIONS: { value: ConnectionConfig["ssl"]; label: string }[] = [
@@ -51,6 +58,19 @@ function defaults(): ConnectionForm {
     ssl: "disable",
     databases: [],
   };
+}
+
+function Wordmark() {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex size-6 items-center justify-center rounded-md bg-accent/15">
+        <Database className="size-3.5 text-accent-text" />
+      </div>
+      <span className="text-[13px] font-semibold tracking-tight text-foreground">
+        GRESUI
+      </span>
+    </div>
+  );
 }
 
 function ThemeToggle({ theme, setTheme }: { theme: "dark" | "light"; setTheme(t: "dark" | "light"): void }) {
@@ -118,6 +138,30 @@ export function ConnectScreen() {
     setProbeDbs(null);
     setDbInput((c.databases ?? []).join(", "));
     setError("");
+  }
+
+  /** Fold a parsed connection string into the form. The name is left alone —
+   * it is the user's label, not part of the string. */
+  function applyParsed(p: ParsedConnection): void {
+    setForm((f) => ({ ...f, ...p }));
+    setPortError("");
+    setError("");
+  }
+
+  /** People paste a whole connection string into the Host box, because that is
+   * where the host goes. Recognise it instead of stuffing a URI into a
+   * hostname field. */
+  function onHostPaste(e: React.ClipboardEvent<HTMLInputElement>): void {
+    const pasted = e.clipboardData.getData("text");
+    if (!looksLikeConnectionString(pasted)) return;
+    const parsed = parseConnectionString(pasted);
+    if (!parsed.ok || !parsed.value) return;
+    e.preventDefault();
+    applyParsed(parsed.value);
+    toastStore.toast({
+      title: "Connection string detected",
+      description: "Filled in the fields from the pasted string.",
+    });
   }
 
   function newConnection(): void {
@@ -240,27 +284,24 @@ export function ConnectScreen() {
   if (connections.length === 0 && editingId === null) {
     return (
       <div className="flex h-full flex-col bg-background">
-        <header className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-raised px-3">
-          <div className="flex items-center gap-2">
-            <Database className="size-5 text-accent" />
-            <span className="text-sm font-semibold text-foreground">GRESUI</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <ThemeToggle theme={theme} setTheme={setTheme} />
-          </div>
+        <header className="flex h-11 shrink-0 items-center justify-between border-b border-border bg-raised px-3">
+          <Wordmark />
+          <ThemeToggle theme={theme} setTheme={setTheme} />
         </header>
         <div className="flex min-h-0 flex-1 items-center justify-center">
           <div className="flex w-full max-w-md flex-col items-center gap-6 p-6">
-            <div className="flex flex-col items-center gap-2 text-center">
-              <div className="flex size-14 items-center justify-center rounded-xl bg-accent/15">
-                <Database className="size-7 text-accent" />
+            <div className="flex flex-col items-center gap-2 text-center animate-slide-up">
+              <div className="flex size-14 items-center justify-center rounded-2xl bg-accent-soft">
+                <Database className="size-7 text-accent-text" />
               </div>
-              <h1 className="text-2xl font-semibold text-foreground">GRESUI</h1>
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                GRESUI
+              </h1>
               <p className="text-sm text-muted">
                 A fast, friendly PostgreSQL client for your desktop.
               </p>
             </div>
-            <div className="w-full rounded-lg border border-border bg-raised p-5">
+            <div className="w-full rounded-xl border border-border bg-raised p-5 shadow-sm animate-slide-up">
               {formSection()}
             </div>
           </div>
@@ -271,20 +312,17 @@ export function ConnectScreen() {
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <header className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-raised px-3">
-        <div className="flex items-center gap-2">
-          <Database className="size-5 text-accent" />
-          <span className="text-sm font-semibold text-foreground">GRESUI</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <ThemeToggle theme={theme} setTheme={setTheme} />
-        </div>
+      <header className="flex h-11 shrink-0 items-center justify-between border-b border-border bg-raised px-3">
+        <Wordmark />
+        <ThemeToggle theme={theme} setTheme={setTheme} />
       </header>
       <div className="flex min-h-0 flex-1 items-stretch">
         {/* Saved connections sidebar */}
         <aside className="flex w-72 shrink-0 flex-col border-r border-border bg-raised">
-          <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
-            <span className="text-sm font-semibold text-foreground">Connections</span>
+          <div className="flex items-center justify-between border-b border-border px-3 py-2">
+            <span className="text-[11px] font-semibold uppercase text-subtle">
+              Connections
+            </span>
             <Button variant="ghost" size="sm" onClick={newConnection}>
               <Plus />
               New
@@ -311,31 +349,42 @@ export function ConnectScreen() {
                 <ContextMenu key={c.id}>
                   <ContextMenuTrigger>
                     <div
-                      className={`group w-full rounded-md border text-left transition-colors ${
+                      className={`group relative w-full overflow-hidden rounded-lg border text-left transition-colors ${
                         editingId === c.id
-                          ? "border-accent/60 bg-surface"
+                          ? "border-accent/50 bg-accent-soft"
                           : "border-transparent hover:bg-surface"
                       }`}
                     >
+                      {/* the whole card selects; double-click connects */}
                       <button
                         type="button"
                         onClick={() => selectConnection(c)}
-                        className="w-full px-3 pt-2 text-left"
+                        onDoubleClick={() => void doConnect(c)}
+                        title={`${c.name} — click to edit, double-click to connect`}
+                        className="w-full px-3 py-2 pr-20 text-left"
                       >
-                        <div className="truncate text-sm font-medium text-foreground">
+                        {editingId === c.id ? (
+                          <span
+                            className="absolute inset-y-0 left-0 w-0.5 bg-accent"
+                            aria-hidden
+                          />
+                        ) : null}
+                        <div className="truncate text-[13px] font-medium text-foreground">
                           {c.name}
                         </div>
-                        <div className="truncate font-mono text-xs text-muted">
+                        <div className="truncate font-mono text-[11px] text-muted">
                           {c.user}@{c.host}:{c.port}
                           {c.database ? `/${c.database}` : ""}
                         </div>
                         {c.lastUsed ? (
-                          <div className="mt-0.5 text-[11px] text-muted/70">
-                            Last used {new Date(c.lastUsed).toLocaleDateString()}
+                          <div className="mt-0.5 text-[11px] text-subtle">
+                            Last used {formatRelativeDate(c.lastUsed)}
                           </div>
                         ) : null}
                       </button>
-                      <div className="flex justify-end gap-1 px-2 pb-2 opacity-0 transition-opacity group-hover:opacity-100">
+                      {/* hover-only used to hide these from keyboard users, who
+                          could still tab into an invisible button */}
+                      <div className="absolute right-1.5 top-1.5 flex gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
                         <Button
                           variant="secondary"
                           size="sm"
@@ -364,6 +413,10 @@ export function ConnectScreen() {
                     </div>
                   </ContextMenuTrigger>
                   <ContextMenuContent>
+                    <ContextMenuItem onClick={() => void doConnect(c)}>
+                      <Plug />
+                      Connect
+                    </ContextMenuItem>
                     <ContextMenuItem
                       onClick={() => selectConnection(c)}
                       disabled={editingId === c.id}
@@ -387,8 +440,8 @@ export function ConnectScreen() {
 
         {/* Form — full width */}
         <main className="flex flex-1 overflow-y-auto">
-          <div className="flex w-full flex-col p-8">
-            <h2 className="mb-6 text-base font-semibold text-foreground">
+          <div className="flex w-full max-w-3xl flex-col p-8">
+            <h2 className="mb-6 text-base font-semibold tracking-tight text-foreground">
               {editingId ? "Edit connection" : "New connection"}
             </h2>
             {formSection()}
@@ -431,6 +484,26 @@ export function ConnectScreen() {
   function formSection() {
     return (
       <div className="flex flex-col gap-4">
+        <ConnectionStringField
+          current={{
+            host: form.host,
+            port: form.port,
+            user: form.user,
+            password: form.password,
+            database: form.database,
+            ssl: form.ssl,
+          }}
+          onApply={applyParsed}
+          onCopyFailed={(message) =>
+            toastStore.toast({ title: "Copy failed", description: message })}
+        />
+
+        <div className="flex items-center gap-3">
+          <span className="h-px flex-1 bg-border" />
+          <span className="text-[10px] uppercase text-subtle">or fill in</span>
+          <span className="h-px flex-1 bg-border" />
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2 flex flex-col gap-1.5">
             <Label htmlFor="conn-name">Connection name</Label>
@@ -447,6 +520,7 @@ export function ConnectScreen() {
               id="conn-host"
               value={form.host}
               placeholder="127.0.0.1"
+              onPaste={onHostPaste}
               onChange={(e) => setForm({ ...form, host: e.target.value })}
             />
           </div>

@@ -15,11 +15,11 @@ export function ErrorBanner({
     <div
       role="alert"
       className={cn(
-        "flex items-start gap-2 rounded-md border border-l-4 border-danger/40 border-l-danger bg-danger/10 px-3 py-2 text-sm text-foreground",
+        "flex items-start gap-2 rounded-md border border-l-2 border-danger/30 border-l-danger bg-danger-soft px-3 py-2 text-sm text-foreground",
         className,
       )}
     >
-      <AlertCircle className="mt-0.5 size-4 shrink-0 text-danger" />
+      <AlertCircle className="mt-0.5 size-4 shrink-0 text-danger-text" />
       <span className="min-w-0 break-words font-mono text-xs leading-relaxed">
         {message}
       </span>
