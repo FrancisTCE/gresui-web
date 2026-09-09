@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   BrowseResponse,
   CellValue,
+  CountMode,
   TableInfo,
 } from "../../../../shared/types.ts";
 import { useAppStore } from "@/AppStore.tsx";
@@ -28,8 +29,13 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.tsx";
 import { call, getBindings } from "@/lib/rpc.ts";
 
+/** Identity of a row count: the relation plus the filter it was taken under. */
+function countKey(target: string, filter: string): string {
+  return `${target}\u0000${filter.trim()}`;
+}
+
 export function TableTab({ tabActive }: { tabActive: boolean }) {
-  const { active, toastStore } = useAppStore();
+  const { active, toastStore, setViewStatus } = useAppStore();
 
   const [data, setData] = useState<BrowseResponse | null>(null);
   const [tableInfo, setTableInfo] = useState<TableInfo | null>(null);
@@ -47,8 +53,22 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
   const [insertOpen, setInsertOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [tick, setTick] = useState(0);
+  const [countMode, setCountMode] = useState<CountMode>("auto");
+  /** An exact count the user paid for, kept for as long as it stays true —
+   * i.e. until the relation or the filter changes. Without this, "Count
+   * exactly" would re-run the full scan on every subsequent page turn. */
+  const [pinnedCount, setPinnedCount] = useState<
+    { key: string; total: number } | null
+  >(null);
   const isMounted = useRef(true);
   const prevKey = useRef<string | null>(null);
+  /** Serialized shape of the last dispatched request — collapses the duplicate
+   * fetch that a table switch used to cause (reset page/filter/sort re-ran the
+   * effect with the values load() had already applied). */
+  const lastReq = useRef<string>("");
+  /** Only the newest request may write state; a slow count on a big table
+   * would otherwise land after the user had already moved on. */
+  const reqSeq = useRef(0);
 
   useEffect(() => {
     isMounted.current = true;
@@ -59,23 +79,36 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
 
   const load = useCallback(async () => {
     if (!active) return;
-    const key = `${active.database}:${active.table}`;
+    // schema belongs in the identity: two schemas routinely hold a table of
+    // the same name, and switching between them must reset filter/sort/page.
+    const key = `${active.database}:${active.schema}:${active.table}`;
     const switched = prevKey.current !== key;
     if (switched) prevKey.current = key;
     const effPage = switched ? 0 : page;
     const effFilter = switched ? "" : filter;
     const effSort = switched ? null : sort;
+    const effCount = switched ? "auto" : countMode;
     if (switched) {
       setPage(0);
       setFilter("");
       setSort(null);
+      setCountMode("auto");
+      setPinnedCount(null);
       setData(null);
       setTableInfo(null);
       setJsonRowIdx(null);
       setJsonOpen(false);
     }
+
+    const req = JSON.stringify([key, effPage, effFilter, effSort, effCount, pageSize, tick]);
+    if (req === lastReq.current) return; // the reset above already asked for this
+    lastReq.current = req;
+    const seq = ++reqSeq.current;
+    const fresh = () => isMounted.current && seq === reqSeq.current;
+
     setLoading(true);
     setError("");
+    const startedAt = performance.now();
     try {
       const b = getBindings();
       const [browse, info] = await Promise.all([
@@ -87,25 +120,54 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
             orderBy: effSort ?? undefined,
             limit: pageSize,
             offset: effPage * pageSize,
+            countMode: effCount,
           }),
         ),
         call(b.getTableInfo(active.database, active.schema, active.table)),
       ]);
-      if (!isMounted.current) return;
+      if (!fresh()) return;
+      const elapsedMs = performance.now() - startedAt;
       setData(browse);
       setTableInfo(info);
+      setViewStatus({
+        rows: browse.rows.length,
+        total: browse.total,
+        estimated: browse.estimated,
+        elapsedMs,
+      });
       setSelected(new Set());
       setJsonRowIdx(null);
+      if (effCount === "exact") {
+        setPinnedCount({ key: countKey(key, effFilter), total: browse.total });
+        setCountMode("auto");
+      }
     } catch (e) {
-      if (isMounted.current) setError((e as Error).message);
+      if (fresh()) {
+        setError((e as Error).message);
+        setViewStatus({ label: "Query failed" });
+      }
     } finally {
-      if (isMounted.current) setLoading(false);
+      if (fresh()) setLoading(false);
     }
-  }, [active, filter, sort, page, pageSize, tick]);
+  }, [active, filter, sort, page, pageSize, tick, countMode, setViewStatus]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!tabActive) return;
+    return () => setViewStatus({});
+  }, [tabActive, setViewStatus]);
+
+  const targetKey = active
+    ? `${active.database}:${active.schema}:${active.table}`
+    : "";
+  // A count is only valid for the relation *and* the filter it was taken under.
+  const pinValid = pinnedCount !== null &&
+    pinnedCount.key === countKey(targetKey, filter);
+  const total = pinValid ? pinnedCount.total : (data?.total ?? 0);
+  const estimated = pinValid ? false : (data?.estimated ?? false);
 
   const readOnly =
     !tableInfo || tableInfo.pkColumns.length === 0 || active?.kind === "v" ||
@@ -142,14 +204,14 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
         ),
       );
       toastStore.toast({ title: "Row updated" });
-      await load();
+      refetch();
     } catch (e) {
       toastStore.toast({
         title: "Update failed",
         description: (e as Error).message,
         variant: "destructive",
       });
-      await load(); // revert the cell display
+      refetch(); // revert the cell display
     }
   }
 
@@ -174,7 +236,7 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
         title: `${n} row${n === 1 ? "" : "s"} deleted`,
       });
       setSelected(new Set());
-      await load();
+      refetch();
     } catch (e) {
       toastStore.toast({
         title: "Delete failed",
@@ -189,7 +251,14 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
     await call(getBindings().insertRow(active.database, active.schema, active.table, values));
     toastStore.toast({ title: "Row inserted" });
     setPage(0);
-    await load();
+    refetch();
+  }
+
+  /** Force a round trip past the request-dedupe guard. */
+  function refetch(): void {
+    lastReq.current = "";
+    setPinnedCount(null); // the row count may have moved too
+    setTick((t) => t + 1);
   }
 
   function applyFilter(f: string): void {
@@ -249,79 +318,57 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
       }
       if (e.key === "Delete" && selected.size > 0 && !readOnly) {
         setDeleteOpen(true);
-      } else if (e.key === "R" && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+      } else if (
+        (e.key === "R" || e.key === "r") && (e.ctrlKey || e.metaKey) && e.shiftKey
+      ) {
         e.preventDefault();
-        setTick((t) => t + 1);
+        refetch();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [active, selected, readOnly]);
 
-  if (!active) return <NoTableSelected />;
-
-  return (
-    <div className="flex h-full flex-col bg-background">
-      <FilterBar
-        filter={filter}
-        onApplyFilter={applyFilter}
-        total={data?.total ?? 0}
-        page={page}
-        pageSize={pageSize}
-        onPageSize={(s) => {
-          setPage(0);
-          setPageSize(s);
-        }}
-        onPageChange={setPage}
-        truncated={data?.truncated ?? false}
-        columns={tableInfo?.columns ?? []}
-      />
-
-      {error ? (
-        <ErrorBanner message={error} className="m-2" />
-      ) : null}
-
-      {readOnly && tableInfo ? (
-        <div className="flex items-center gap-2 border-b border-border bg-raised px-3 py-1.5 text-xs text-muted">
-          <EyeOff className="size-3.5" />
-          {readOnlyReason}
-        </div>
-      ) : null}
-
-      {/* toolbar */}
-      <div className="flex shrink-0 items-center gap-1.5 border-b border-border bg-raised px-2 py-1.5">
+  /** Row actions, rendered by FilterBar to the left of the pager. */
+  function toolbar() {
+    return (
+      <>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => setInsertOpen(true)}
-              disabled={readOnly || loading}
-            >
-              <Plus />
-              New Row
-            </Button>
+            <span>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => setInsertOpen(true)}
+                disabled={readOnly || loading}
+              >
+                <Plus />
+                New Row
+              </Button>
+            </span>
           </TooltipTrigger>
           {readOnly ? <TooltipContent>{readOnlyReason}</TooltipContent> : null}
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => setDeleteOpen(true)}
-              disabled={readOnly || selected.size === 0 || loading}
-            >
-              <Trash2 />
-              Delete{selected.size > 0 ? ` (${selected.size})` : ""}
-            </Button>
+            <span>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => setDeleteOpen(true)}
+                disabled={readOnly || selected.size === 0 || loading}
+              >
+                <Trash2 />
+                Delete{selected.size > 0 ? ` (${selected.size})` : ""}
+              </Button>
+            </span>
           </TooltipTrigger>
           {readOnly ? <TooltipContent>{readOnlyReason}</TooltipContent> : null}
         </Tooltip>
         <Button
           size="sm"
           variant="secondary"
-          onClick={() => setTick((t) => t + 1)}
+          onClick={refetch}
           disabled={loading}
           title="Refresh (Ctrl/Cmd+Shift+R)"
         >
@@ -333,12 +380,53 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
           disabled={loading || exporting || (data?.columns.length ?? 0) === 0}
           exporting={exporting}
         />
-        <span className="ml-auto pr-1 text-xs text-muted">
-          {tableInfo
-            ? `${tableInfo.schema}.${tableInfo.table} — ${tableInfo.columns.length} columns`
-            : ""}
-        </span>
-      </div>
+      </>
+    );
+  }
+
+  if (!active) return <NoTableSelected />;
+
+  return (
+    <div className="flex h-full flex-col bg-background">
+      <FilterBar
+        filter={filter}
+        onApplyFilter={applyFilter}
+        total={total}
+        estimated={estimated}
+        onExactCount={() => {
+          lastReq.current = ""; // same page, different count mode
+          setCountMode("exact");
+        }}
+        loading={loading}
+        page={page}
+        pageSize={pageSize}
+        onPageSize={(s) => {
+          setPage(0);
+          setPageSize(s);
+        }}
+        onPageChange={setPage}
+        columns={tableInfo?.columns ?? []}
+        actions={toolbar()}
+      />
+
+      {error
+        ? (
+          <ErrorBanner
+            message={error}
+            className="m-2 max-h-32 shrink-0 overflow-auto"
+          />
+        )
+        : null}
+
+      {readOnly && tableInfo ? (
+        <div className="flex items-center gap-2 border-b border-border bg-raised px-3 py-1 text-xs text-muted">
+          <EyeOff className="size-3.5 shrink-0" />
+          {readOnlyReason}
+          <span className="ml-auto font-mono text-[11px] text-subtle">
+            {tableInfo.schema}.{tableInfo.table} · {tableInfo.columns.length} columns
+          </span>
+        </div>
+      ) : null}
 
       <div className="min-h-0 flex-1">
         <DataGrid
@@ -346,6 +434,10 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
           rows={data?.rows ?? []}
           editable
           selectable
+          loading={loading}
+          emptyMessage={filter.trim()
+            ? "No rows match the filter."
+            : "This table is empty."}
           pkColumns={tableInfo?.pkColumns ?? []}
           sortState={sort}
           onSortChange={(s) => {
@@ -361,6 +453,7 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
             setJsonOpen(true);
           }}
           selectedRowIndex={jsonRowIdx}
+          rowOffset={page * pageSize}
         />
       </div>
 

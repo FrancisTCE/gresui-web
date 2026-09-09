@@ -1,57 +1,184 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,400..700;1,14..32,400..600&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
-/* Semantic tokens. :root = light, .dark = dark. App defaults to dark per Settings. */
+
+/* ---------------------------------------------------------------------------
+   Design tokens. :root = light, .dark = dark. App defaults to dark per Settings.
+
+   Surfaces are a depth ladder, not a set of unrelated greys:
+     background < raised < surface < surface-active < overlay
+   "background" is the reading canvas (the grid), "raised" is chrome that sits
+   on it (sidebar, toolbars), "overlay" floats above everything (menus,
+   dialogs, the command palette). Anything that floats also gets a shadow — in
+   dark mode a shadow alone is nearly invisible, so overlays carry a lighter
+   border as well.
+--------------------------------------------------------------------------- */
 :root {
   --bg: #ffffff;
-  --bg-raised: #f6f7f9;
-  --bg-hover: #eef0f3;
-  --bg-active: #e3e6ea;
-  --border: #d9dce1;
-  --text: #1b1f24;
-  --text-muted: #69707d;
+  --bg-raised: #f7f8fa;
+  --bg-overlay: #ffffff;
+  --bg-hover: #eff1f4;
+  --bg-active: #e4e7ec;
+  --border: #e2e5ea;
+  --border-strong: #cbd0d8;
+  --text: #12151b;
+  --text-muted: #5f6875;
+  --text-subtle: #98a0ad;
   --accent: #0e8a43;
   --accent-hover: #0c7a3b;
   --accent-fg: #ffffff;
+  --accent-text: #0a7038;
+  --accent-soft: rgba(14, 138, 67, 0.1);
   --danger: #d64545;
   --danger-fg: #ffffff;
-  --ring: rgba(14, 138, 67, 0.45);
-  --code-bg: #f0f1f3;
-  --selection: rgba(14, 138, 67, 0.14);
+  --danger-text: #b52d2d;
+  --danger-soft: rgba(214, 69, 69, 0.1);
+  --warning-text: #a15c07;
+  --ring: rgba(14, 138, 67, 0.5);
+  --code-bg: #f2f4f6;
+  --selection: rgba(14, 138, 67, 0.16);
+
+  /* Cell values by type. A column of dates should not read like a column of
+     free text — colour carries the type so the eye can skip the header. */
+  --t-number: #9a5b06;
+  --t-bool: #7c3aed;
+  --t-date: #0369a1;
+  --t-uuid: #1d4ed8;
+  --t-json: #a21caf;
+  --t-null: #98a0ad;
+
+  --shadow-sm: 0 1px 2px rgba(16, 20, 28, 0.06);
+  --shadow-md: 0 4px 12px -2px rgba(16, 20, 28, 0.1),
+    0 2px 4px -2px rgba(16, 20, 28, 0.06);
+  --shadow-lg: 0 16px 40px -8px rgba(16, 20, 28, 0.18),
+    0 4px 12px -4px rgba(16, 20, 28, 0.1);
 }
 
 .dark {
-  --bg: #1d2129;
-  --bg-raised: #242a33;
-  --bg-hover: #2b323d;
-  --bg-active: #333b48;
-  --border: #343d4a;
-  --text: #dde1e6;
-  --text-muted: #8b93a1;
+  --bg: #12151b;
+  --bg-raised: #171b22;
+  --bg-overlay: #1c212a;
+  --bg-hover: #222833;
+  --bg-active: #2c333f;
+  --border: #262c36;
+  --border-strong: #38414f;
+  --text: #e3e7ee;
+  --text-muted: #8b94a3;
+  --text-subtle: #626b7a;
   --accent: #13aa52;
-  --accent-hover: #16bd5c;
+  --accent-hover: #17c25e;
   --accent-fg: #ffffff;
+  --accent-text: #4ade80;
+  --accent-soft: rgba(19, 170, 82, 0.14);
   --danger: #e5484d;
   --danger-fg: #ffffff;
-  --ring: rgba(19, 170, 82, 0.45);
-  --code-bg: #171b21;
-  --selection: rgba(19, 170, 82, 0.22);
+  --danger-text: #ff6369;
+  --danger-soft: rgba(229, 72, 77, 0.14);
+  --warning-text: #e0af68;
+  --ring: rgba(19, 170, 82, 0.55);
+  --code-bg: #0d1015;
+  --selection: rgba(19, 170, 82, 0.24);
+
+  --t-number: #e0af68;
+  --t-bool: #bb9af7;
+  --t-date: #7dcfff;
+  --t-uuid: #82aaff;
+  --t-json: #e39cf7;
+  --t-null: #626b7a;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.5),
+    0 2px 4px -2px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 16px 40px -8px rgba(0, 0, 0, 0.65),
+    0 4px 12px -4px rgba(0, 0, 0, 0.5);
 }
 
 @theme inline {
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+    monospace;
+
   --color-background: var(--bg);
   --color-raised: var(--bg-raised);
+  --color-overlay: var(--bg-overlay);
   --color-surface: var(--bg-hover);
   --color-surface-active: var(--bg-active);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-foreground: var(--text);
   --color-muted: var(--text-muted);
+  --color-subtle: var(--text-subtle);
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-fg: var(--accent-fg);
+  --color-accent-text: var(--accent-text);
+  --color-accent-soft: var(--accent-soft);
   --color-danger: var(--danger);
   --color-danger-fg: var(--danger-fg);
+  --color-danger-text: var(--danger-text);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning-text: var(--warning-text);
   --color-ring: var(--ring);
   --color-code: var(--code-bg);
+
+  --color-t-number: var(--t-number);
+  --color-t-bool: var(--t-bool);
+  --color-t-date: var(--t-date);
+  --color-t-uuid: var(--t-uuid);
+  --color-t-json: var(--t-json);
+  --color-t-null: var(--t-null);
+
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+
+  /* Expo-out: quick departure, long settle. Reads as "responsive" rather than
+     "animated", which is what chrome in a tool should feel like. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --animate-fade-in: fade-in 120ms var(--ease-out);
+  --animate-pop-in: pop-in 140ms var(--ease-out);
+  --animate-slide-up: slide-up 180ms var(--ease-out);
+  --animate-shimmer: shimmer 1.4s linear infinite;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: -160% 0;
+  }
+  to {
+    background-position: 160% 0;
+  }
 }
 
 html,
@@ -63,14 +190,29 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  -webkit-font-smoothing: antialiased;
+  font-family: var(--font-sans);
   font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-optical-sizing: auto;
+  /* cv05: lowercase l with a tail — keeps l/1/I apart in table and column
+     names, which is the whole job in a database client. */
+  font-feature-settings: "cv05" 1;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior: none;
 }
 
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
+/* Headings read tighter than body copy at the same weight. */
+h1,
+h2,
+h3 {
+  letter-spacing: -0.012em;
+}
+
+/* Small uppercase labels need the opposite treatment to stay readable. */
+.uppercase {
+  letter-spacing: 0.04em;
 }
 
 ::selection {
@@ -82,11 +224,86 @@ body {
   outline-offset: 1px;
 }
 
-/* Monospace stack for SQL / data cells. */
+/* Firefox has no ::-webkit-scrollbar; this is the only knob it offers. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+/* Chromium: overlay-style bars that only take on contrast under the pointer,
+   so a scrolled grid does not carry a permanent grey stripe down its edge. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-subtle);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Monospace surfaces: SQL, identifiers, cell values.
+   - tabular-nums keeps digit columns aligned row to row
+   - slashed-zero separates 0 from O in ids, hashes and hex
+   - ligatures off so <>, !=, ->, -- stay the characters they are, which
+     matters more in SQL than it looks pretty */
 .font-mono,
 code,
 kbd,
 pre {
-  font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular,
-    Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-variant-ligatures: none;
+  font-feature-settings: normal;
+}
+
+/* CodeMirror sets its own family on .cm-scroller; keep the same figures and
+   the same no-ligature rule inside the editor. */
+.cm-editor {
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-variant-ligatures: none;
+}
+
+/* Skeletons: a travelling highlight rather than a whole block pulsing, which
+   at this density looked like the UI was flickering. */
+.skeleton {
+  background-color: var(--bg-hover);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--text) 7%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 160% 100%;
+  background-repeat: no-repeat;
+  animation: var(--animate-shimmer);
+}
+
+/* Respect the OS setting: drop decorative motion, and make state changes
+   instant rather than merely faster. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

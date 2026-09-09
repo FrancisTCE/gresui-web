@@ -1,6 +1,6 @@
 // FilterBar — WHERE clause input + row count + pagination controls.
-import { Filter, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, Filter, X } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { ColumnInfo } from "../../../../shared/types.ts";
 import { BOOL_RE, columnKind } from "./filter-ops.ts";
@@ -13,6 +13,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select.tsx";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.tsx";
+import { formatCount, formatRowCount } from "@/lib/format.ts";
 import { cn } from "@/lib/utils.ts";
 
 export const PAGE_SIZES = [50, 100, 250, 500];
@@ -106,22 +108,30 @@ export function FilterBar({
   filter,
   onApplyFilter,
   total,
+  estimated,
+  onExactCount,
+  loading,
   page,
   pageSize,
   onPageSize,
   onPageChange,
-  truncated,
   columns,
+  actions,
 }: {
   filter: string;
   onApplyFilter(f: string): void;
   total: number;
+  /** `total` is a planner estimate — the grid says so and offers a real count. */
+  estimated: boolean;
+  onExactCount(): void;
+  loading: boolean;
   page: number;
   pageSize: number;
   onPageSize(s: number): void;
   onPageChange(p: number): void;
-  truncated: boolean;
   columns: ColumnInfo[];
+  /** Table actions (New Row, Delete, …) — rendered left of the pager. */
+  actions?: ReactNode;
 }) {
   const [draft, setDraft] = useState(filter);
   const [suggestions, setSuggestions] = useState<Suggestions | null>(null);
@@ -174,8 +184,8 @@ export function FilterBar({
     const el = inputRef.current;
     if (!el) return;
     const caret = el.selectionStart ?? el.value.length;
-    const next =
-      el.value.slice(0, suggestions.tokenStart) + item + " " + el.value.slice(caret);
+    const next = el.value.slice(0, suggestions.tokenStart) + item + " " +
+      el.value.slice(caret);
     const newCaret = suggestions.tokenStart + item.length + 1;
     setDraft(next);
     setFocusPos(newCaret);
@@ -185,10 +195,14 @@ export function FilterBar({
   };
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
+  const dirty = draft !== filter;
+  const from = total === 0 ? 0 : page * pageSize + 1;
+  const to = Math.min((page + 1) * pageSize, total);
 
   return (
-    <div className="flex shrink-0 flex-col gap-2 border-b border-border bg-raised p-2">
-      <div className="flex items-center gap-2">
+    <div className="flex shrink-0 flex-col border-b border-border bg-raised">
+      {/* WHERE clause */}
+      <div className="flex items-center gap-2 px-2 py-1.5">
         <Filter className="size-4 shrink-0 text-muted" />
         <div className="relative flex-1" ref={wrapperRef}>
           <Input
@@ -217,14 +231,19 @@ export function FilterBar({
               } else if (e.key === "Enter") {
                 onApplyFilter(draft);
               } else if (e.key === "Escape") {
+                // Revert the draft only. Escape used to clear the *applied*
+                // filter too, throwing away the query being edited.
+                e.preventDefault();
                 setDraft(filter);
-                onApplyFilter("");
               }
             }}
             onSelect={(e) => updateFromInput(e.currentTarget)}
             onClick={(e) => updateFromInput(e.currentTarget)}
             placeholder="WHERE — e.g. status = 'active' AND balance > 100"
-            className="h-7 w-full font-mono text-xs"
+            className={cn(
+              "h-7 w-full font-mono text-xs",
+              dirty && "border-accent/60",
+            )}
             aria-label="Filter (WHERE clause)"
           />
           {suggestions ? (
@@ -249,7 +268,11 @@ export function FilterBar({
             </div>
           ) : null}
         </div>
-        <Button size="sm" variant="secondary" onClick={() => onApplyFilter(draft)}>
+        <Button
+          size="sm"
+          variant={dirty ? "default" : "secondary"}
+          onClick={() => onApplyFilter(draft)}
+        >
           Apply
         </Button>
         <Button
@@ -259,29 +282,51 @@ export function FilterBar({
             setDraft("");
             onApplyFilter("");
           }}
-          disabled={!filter}
+          disabled={!filter && !draft}
           title="Clear filter"
         >
           <X />
           Clear
         </Button>
-        <span className="shrink-0 pl-1 text-xs text-muted">
-          {total.toLocaleString()} rows
-        </span>
       </div>
 
-      <div className="flex items-center justify-between">
-        <span className={cn("text-xs", truncated ? "text-danger" : "text-muted")}>
-          {truncated
-            ? "Showing first 10,000 rows — refine the filter"
-            : "Filtered"}
-        </span>
-        <div className="flex items-center gap-2">
+      {/* actions + pager */}
+      <div className="flex items-center gap-1.5 border-t border-border/60 px-2 py-1.5">
+        {actions}
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-xs tabular-nums text-muted">
+            {loading && total === 0
+              ? "Counting…"
+              : total === 0
+              ? "No rows"
+              : `${formatCount(from)}–${formatCount(to)} of ${
+                formatRowCount(total, estimated)
+              }`}
+          </span>
+          {estimated ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-1.5 text-[11px]"
+                  onClick={onExactCount}
+                  disabled={loading}
+                >
+                  Count exactly
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Estimated from table statistics — an exact count scans every row
+                and can take a while.
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
           <Select
             value={String(pageSize)}
             onValueChange={(v) => onPageSize(Number(v))}
           >
-            <SelectTrigger className="h-7 w-28 text-xs">
+            <SelectTrigger className="h-7 w-[104px] shrink-0 whitespace-nowrap text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -292,25 +337,32 @@ export function FilterBar({
               ))}
             </SelectContent>
           </Select>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => onPageChange(page - 1)}
-            disabled={page <= 0}
-          >
-            Prev
-          </Button>
-          <span className="text-xs text-muted">
-            Page {page + 1} of {pages}
-          </span>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => onPageChange(page + 1)}
-            disabled={page >= pages - 1}
-          >
-            Next
-          </Button>
+          <div className="flex items-center gap-0.5">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-7"
+              onClick={() => onPageChange(page - 1)}
+              disabled={page <= 0 || loading}
+              aria-label="Previous page"
+            >
+              <ChevronLeft />
+            </Button>
+            <span className="min-w-24 text-center text-xs tabular-nums text-muted">
+              Page {formatCount(page + 1)} of {estimated ? "~" : ""}
+              {formatCount(pages)}
+            </span>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-7"
+              onClick={() => onPageChange(page + 1)}
+              disabled={page >= pages - 1 || loading}
+              aria-label="Next page"
+            >
+              <ChevronRight />
+            </Button>
+          </div>
         </div>
       </div>
     </div>

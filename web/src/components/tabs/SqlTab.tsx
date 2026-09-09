@@ -20,15 +20,24 @@ import {
 } from "@/components/ui/dialog.tsx";
 import { Skeleton } from "@/components/ui/skeleton.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.tsx";
-import { cn } from "@/lib/utils.ts";
 import { call, getBindings } from "@/lib/rpc.ts";
 
-const PLACEHOLDER = `-- Ctrl/Cmd+Enter to run
-SELECT * FROM app.users LIMIT 50;`;
+/** Bare identifier when Postgres would accept it, quoted otherwise. */
+function ident(name: string): string {
+  return /^[a-z_][a-z0-9_]*$/.test(name) ? name : `"${name.replaceAll('"', '""')}"`;
+}
+
+function starterQuery(schema: string, table: string): string {
+  return `SELECT *
+FROM ${ident(schema)}.${ident(table)}
+LIMIT 50;`;
+}
 
 export function SqlTab({ active }: { active: boolean }) {
-  const { theme, toastStore } = useAppStore();
-  const [text, setText] = useState(PLACEHOLDER);
+  const { theme, toastStore, active: target, lastActive } = useAppStore();
+  const [text, setText] = useState("");
+  /** The last query this tab wrote for the user; anything else is theirs. */
+  const seeded = useRef("");
   const [result, setResult] = useState<QueryResult | null>(null);
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
@@ -36,7 +45,22 @@ export function SqlTab({ active }: { active: boolean }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [editorH, setEditorH] = useState(240);
-  const dragRef = useRef(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // Opening the tab (or picking another table) drops in a runnable query for
+  // the current relation — but never over something the user typed.
+  const relation = target ?? lastActive;
+  useEffect(() => {
+    if (!active || !relation) return;
+    if (text !== "" && text !== seeded.current) return;
+    const next = starterQuery(relation.schema, relation.table);
+    if (next === text) return;
+    seeded.current = next;
+    setText(next);
+    // `text` is deliberately absent: re-seeding on every keystroke would fight
+    // the user for the editor.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, relation?.schema, relation?.table]);
 
   async function run(): Promise<void> {
     if (running || !text.trim()) return;
@@ -86,20 +110,24 @@ export function SqlTab({ active }: { active: boolean }) {
 
   function onSplitterDown(e: React.PointerEvent): void {
     e.preventDefault();
-    dragRef.current = true;
     const startY = e.clientY;
     const startH = editorH;
+    // Resolve the pane once, up front. Reading it from ev.target mid-drag
+    // failed the moment the pointer left the pane (over the sidebar, the
+    // results grid, or outside the window), snapping the editor to a
+    // hardcoded 600px ceiling.
+    const root = rootRef.current;
     const onMove = (ev: PointerEvent): void => {
-      // editor grows downward; parent is the tab content area
-      const parent = (ev.target as HTMLElement).closest(".sql-root") as HTMLElement | null;
-      const max = parent ? parent.clientHeight - 120 : 600;
+      const max = root ? root.clientHeight - 120 : 600;
       setEditorH(Math.min(max, Math.max(90, startH + (ev.clientY - startY))));
     };
     const onUp = (): void => {
-      dragRef.current = false;
+      document.body.classList.remove("select-none");
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
+    // stop the drag from selecting the SQL text it passes over
+    document.body.classList.add("select-none");
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
   }
@@ -127,7 +155,7 @@ export function SqlTab({ active }: { active: boolean }) {
   const isExplain = explain && result !== null && result.command === "EXPLAIN";
 
   return (
-    <div className="sql-root flex h-full flex-col bg-background">
+    <div ref={rootRef} className="sql-root flex h-full flex-col bg-background">
       {/* toolbar */}
       <div className="flex shrink-0 items-center gap-1.5 border-b border-border bg-raised px-2 py-1.5">
         <Button size="sm" onClick={() => void run()} disabled={running || !text.trim()}>
@@ -176,7 +204,7 @@ export function SqlTab({ active }: { active: boolean }) {
       {/* results */}
       <div className="min-h-0 flex-1">
         {error ? (
-          <div className="p-2">
+          <div className="h-full overflow-auto p-2">
             <ErrorBanner message={error} />
           </div>
         ) : running ? (
@@ -212,14 +240,13 @@ export function SqlTab({ active }: { active: boolean }) {
                   </div>
                 </>
               ) : (
-                <span
-                  className={cn(
-                    "rounded bg-surface px-2 py-0.5 font-mono text-foreground",
-                    result.command.startsWith("ERROR") && "text-danger",
-                  )}
-                >
-                  {result.command || "OK"} {result.rowCount}
-                </span>
+                <>
+                  <span className="rounded bg-surface px-2 py-0.5 font-mono text-foreground">
+                    {result.command || "OK"}
+                    {result.rowCount ? ` ${result.rowCount}` : ""}
+                  </span>
+                  <span className="font-mono">{result.durationMs} ms</span>
+                </>
               )}
             </div>
           </div>

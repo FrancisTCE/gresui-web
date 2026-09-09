@@ -9,6 +9,9 @@ import { NoTableSelected } from "@/screens/MainShell.tsx";
 import { Badge } from "@/components/ui/badge.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Skeleton } from "@/components/ui/skeleton.tsx";
+import { formatCount } from "@/lib/format.ts";
+import { typeColorClass } from "@/lib/pg-types.ts";
+import { cn } from "@/lib/utils.ts";
 import { call, getBindings } from "@/lib/rpc.ts";
 
 export function InfoTab() {
@@ -50,8 +53,8 @@ export function InfoTab() {
     <div className="h-full overflow-y-auto bg-background p-4">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-foreground">
-          <span className="font-mono text-accent">{active.schema}</span>
-          <span className="text-muted">.</span>
+          <span className="font-mono text-accent-text">{active.schema}</span>
+          <span className="text-subtle">.</span>
           <span className="font-mono">{active.table}</span>
         </h2>
         <Button
@@ -78,13 +81,27 @@ export function InfoTab() {
 
       {info ? (
         <>
+          <dl className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Stat label="Columns" value={String(info.columns.length)} />
+            <Stat
+              label="Rows (estimated)"
+              value={info.rowEstimate === null ? "—" : `~${formatCount(info.rowEstimate)}`}
+            />
+            <Stat
+              label="Primary key"
+              value={info.pkColumns.length ? info.pkColumns.join(", ") : "none"}
+              mono={info.pkColumns.length > 0}
+            />
+            <Stat label="Indexes" value={String(indexes.length)} />
+          </dl>
+
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
             Columns ({info.columns.length})
           </h3>
           <div className="mb-5 overflow-hidden rounded-md border border-border">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-raised text-left text-xs text-muted">
+                <tr className="bg-raised text-left text-[11px] uppercase text-subtle">
                   <th className="px-3 py-1.5 font-medium">Name</th>
                   <th className="px-3 py-1.5 font-medium">Type</th>
                   <th className="px-3 py-1.5 font-medium">Nullable</th>
@@ -98,25 +115,22 @@ export function InfoTab() {
                     <td className="px-3 py-1.5 font-medium text-foreground">
                       {c.name}
                     </td>
-                    <td className="px-3 py-1.5 font-mono text-xs text-accent">
+                    <td
+                      className={cn(
+                        "px-3 py-1.5 font-mono text-xs",
+                        typeColorClass(c.type) || "text-muted",
+                      )}
+                    >
                       {c.type}
                     </td>
                     <td className="px-3 py-1.5 text-muted">
-                      {c.notNull ? (
-                        <Badge variant="muted">NOT NULL</Badge>
-                      ) : (
-                        "yes"
-                      )}
+                      {c.notNull ? "no" : "yes"}
                     </td>
                     <td className="px-3 py-1.5 font-mono text-xs text-muted">
                       {c.hasDefault ? "yes" : "—"}
                     </td>
-                    <td className="px-3 py-1.5">
-                      {c.isPk ? (
-                        <Badge variant="default">PK</Badge>
-                      ) : (
-                        "—"
-                      )}
+                    <td className="px-3 py-1.5 text-muted">
+                      {c.isPk ? <Badge variant="default">PK</Badge> : "—"}
                     </td>
                   </tr>
                 ))}
@@ -140,9 +154,10 @@ export function InfoTab() {
                     <span className="text-sm font-medium text-foreground">
                       {ix.name}
                     </span>
-                    {ix.unique ? (
-                      <Badge variant="secondary">unique</Badge>
-                    ) : null}
+                    {ix.primary ? <Badge variant="default">primary key</Badge> : null}
+                    {ix.unique && !ix.primary
+                      ? <Badge variant="secondary">unique</Badge>
+                      : null}
                   </div>
                   <code className="block break-words font-mono text-xs leading-relaxed text-muted">
                     {ix.definition}
@@ -153,6 +168,22 @@ export function InfoTab() {
           )}
         </>
       ) : null}
+    </div>
+  );
+}
+
+function Stat(
+  { label, value, mono }: { label: string; value: string; mono?: boolean },
+) {
+  return (
+    <div className="rounded-md border border-border bg-raised px-3 py-2">
+      <dt className="text-[11px] uppercase tracking-wide text-muted">{label}</dt>
+      <dd
+        className={`truncate text-sm text-foreground${mono ? " font-mono text-xs" : ""}`}
+        title={value}
+      >
+        {value}
+      </dd>
     </div>
   );
 }

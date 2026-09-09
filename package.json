@@ -15,7 +15,7 @@
     "web"
   ],
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.6.0"
   },
   "bin": {
     "gresui-web": "bin/gresui-web.js"
@@ -28,23 +28,14 @@
   ],
   "scripts": {
     "build": "vite build",
-    "dev": "bun run backend/main.ts",
+    "dev": "node bin/gresui-web.js",
+    "test": "node --test \"web/src/**/*.test.ts\"",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "postgres": "^3.4.9",
     "zod": "^4.4.3"
-  },
-  "optionalDependencies": {
-    "@oven/bun-darwin-aarch64": "1.3.14",
-    "@oven/bun-darwin-x64": "1.3.14",
-    "@oven/bun-linux-aarch64": "1.3.14",
-    "@oven/bun-linux-aarch64-musl": "1.3.14",
-    "@oven/bun-linux-x64": "1.3.14",
-    "@oven/bun-linux-x64-musl": "1.3.14",
-    "@oven/bun-windows-aarch64": "1.3.14",
-    "@oven/bun-windows-x64": "1.3.14"
   },
   "devDependencies": {
     "@codemirror/lang-sql": "^6.10.0",

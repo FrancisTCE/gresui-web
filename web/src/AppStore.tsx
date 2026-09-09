@@ -12,6 +12,21 @@ import type { ConnStatus, RelationKind, Settings } from "../../shared/types.ts";
 import { call, getBindings } from "@/lib/rpc.ts";
 import { createToastStore, ToastStoreContext, type ToastStore } from "@/lib/toast-store.ts";
 
+/** What the status bar shows about the view in front of the user. Published
+ * by whichever tab is active; the shell only renders it. */
+export interface ViewStatus {
+  /** Rows currently rendered. */
+  rows?: number;
+  /** Rows the query matches in total. */
+  total?: number;
+  /** `total` is a planner estimate rather than a count. */
+  estimated?: boolean;
+  /** Round-trip of the last fetch, in ms. */
+  elapsedMs?: number;
+  /** Free-text state ("Loading…", an error) shown instead of the counts. */
+  label?: string;
+}
+
 export interface ActiveTarget {
   database: string;
   schema: string;
@@ -26,10 +41,12 @@ export interface AppStoreValue {
   lastActive: ActiveTarget | null;
   theme: "dark" | "light";
   toastStore: ToastStore;
+  viewStatus: ViewStatus;
   setConnStatus(s: ConnStatus): void;
   setActive(a: ActiveTarget | null): void;
   goHome(): void;
   setTheme(t: "dark" | "light"): void;
+  setViewStatus(s: ViewStatus): void;
 }
 
 const AppStoreContext = createContext<AppStoreValue | null>(null);
@@ -42,16 +59,21 @@ export function useAppStore(): AppStoreValue {
 
 export function AppStoreProvider({
   settings,
+  initialConnStatus = { connected: false },
   children,
 }: {
   settings: Settings;
+  /** Status the backend reported at boot — non-empty after a page reload of a
+   * still-connected session. */
+  initialConnStatus?: ConnStatus;
   children: ReactNode;
 }) {
   const toastStore = useMemo(() => createToastStore(), []);
   const [curSettings, setCurSettings] = useState(settings);
-  const [connStatus, setConnStatus] = useState<ConnStatus>({ connected: false });
+  const [connStatus, setConnStatus] = useState<ConnStatus>(initialConnStatus);
   const [active, setActiveRaw] = useState<ActiveTarget | null>(null);
   const [lastActive, setLastActive] = useState<ActiveTarget | null>(null);
+  const [viewStatus, setViewStatus] = useState<ViewStatus>({});
 
   function setActive(a: ActiveTarget | null): void {
     if (a) setLastActive(a);
@@ -74,9 +96,11 @@ export function AppStoreProvider({
       lastActive,
       theme: curSettings.theme,
       toastStore,
+      viewStatus,
       setConnStatus,
       setActive,
       goHome,
+      setViewStatus,
       setTheme: (t) => {
         document.documentElement.classList.toggle("dark", t !== "light");
         setCurSettings((s) => ({ ...s, theme: t }));
@@ -87,7 +111,7 @@ export function AppStoreProvider({
         }
       },
     }),
-    [curSettings, connStatus, active, lastActive, toastStore],
+    [curSettings, connStatus, active, lastActive, toastStore, viewStatus],
   );
 
   return (

@@ -31,6 +31,8 @@ export type RelationKind = "r" | "p" | "v" | "m" | "f";
 export interface RelationInfo {
   name: string;
   kind: RelationKind;
+  /** Planner row estimate (pg_class.reltuples); null when never analyzed. */
+  rowEstimate: number | null;
 }
 
 export interface ColumnInfo {
@@ -45,6 +47,8 @@ export interface ColumnInfo {
 export interface IndexInfo {
   name: string;
   unique: boolean;
+  /** Backs the table's PRIMARY KEY constraint. */
+  primary: boolean;
   definition: string;
 }
 
@@ -60,6 +64,11 @@ export interface TableInfo {
 export type CellValue = null | boolean | number | string;
 export type Row = CellValue[];
 
+/** How `browse` decides the total row count.
+ * "auto"  — planner estimate first; an exact count only when it is cheap.
+ * "exact" — always count(*), however slow (the user asked for it). */
+export type CountMode = "auto" | "exact";
+
 export interface BrowseRequest {
   schema: string;
   table: string;
@@ -67,13 +76,16 @@ export interface BrowseRequest {
   orderBy?: { column: string; dir: "asc" | "desc" };
   limit: number;
   offset: number;
+  /** Defaults to "auto". */
+  countMode?: CountMode;
 }
 
 export interface BrowseResponse {
   columns: { name: string; type: string }[];
   rows: Row[];
   total: number;
-  truncated: boolean;
+  /** True when `total` is a planner estimate, not an exact count. */
+  estimated: boolean;
 }
 
 export interface ExportRequest {

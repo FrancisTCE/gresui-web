@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import type { Settings } from "../../shared/types.ts";
+import type { ConnStatus, Settings } from "../../shared/types.ts";
 import { AppStoreProvider, useAppStore } from "./AppStore.tsx";
 import { TooltipProvider } from "@/components/ui/tooltip.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
@@ -12,24 +12,32 @@ import { call, getBindings } from "@/lib/rpc.ts";
 
 export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
+  // The backend owns the connection, not the page. Ask it what it has, so a
+  // reload lands back in the session instead of on the connect screen.
+  const [initialConn, setInitialConn] = useState<ConnStatus>({ connected: false });
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      try {
-        const s = await call(getBindings().getSettings());
-        if (alive) setSettings(s);
-      } catch {
-        if (alive) {
-          setSettings({ theme: "dark", window: { width: 1280, height: 800 } });
-        }
-      }
+      const b = getBindings();
+      const [s, status] = await Promise.allSettled([
+        call(b.getSettings()),
+        call(b.getStatus()),
+      ]);
+      if (!alive) return;
+      setInitialConn(
+        status.status === "fulfilled" ? status.value : { connected: false },
+      );
+      setSettings(
+        s.status === "fulfilled"
+          ? s.value
+          : { theme: "dark", window: { width: 1280, height: 800 } },
+      );
     })();
     return () => {
       alive = false;
     };
   }, []);
-
 
   if (!settings) {
     return (
@@ -40,7 +48,7 @@ export default function App() {
   }
 
   return (
-    <AppStoreProvider settings={settings}>
+    <AppStoreProvider settings={settings} initialConnStatus={initialConn}>
       <ErrorBoundary>
         <Gate />
       </ErrorBoundary>

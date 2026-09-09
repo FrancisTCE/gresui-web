@@ -11,7 +11,9 @@
 // (on first open of a fresh DB), then removed. Rows written before encryption
 // (plaintext in the db) are encrypted on first init.
 
-import { Database } from "bun:sqlite";
+// node:sqlite's DatabaseSync is API-compatible with bun:sqlite for everything
+// used here: exec(), prepare().get()/.all()/.run(), close().
+import { DatabaseSync as Database } from "node:sqlite";
 import {
   chmodSync,
   mkdirSync,
@@ -61,8 +63,8 @@ export function configDir(): string {
   return xdg ? `${xdg}/gresui` : `${home}/.config/gresui`;
 }
 
-// Per-env init (crypto.subtle is async; bun:sqlite is sync — init once, sync
-// ops after). Tests swap GRESUI_CONFIG_DIR between cases.
+// Per-env init (crypto.subtle is async; the sqlite API is sync — init once,
+// sync ops after). Tests swap GRESUI_CONFIG_DIR between cases.
 const readyMap = new Map<string, Promise<void>>();
 const stateMap = new Map<string, { dir: string; db: Database; key: CryptoKey }>();
 

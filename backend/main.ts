@@ -23,6 +23,7 @@ import type {
 } from "../shared/types.ts";
 import * as config from "./config.ts";
 import * as data from "./data.ts";
+import { serve } from "./http.ts";
 import * as mcp from "./mcp.ts";
 import * as meta from "./meta.ts";
 import { PgPool, PgSession } from "./pg.ts";
@@ -258,7 +259,7 @@ const bindings: Bindings = {
     }
   },
 
-  listSchemas: async (db: string) => meta.listSchemas(await sessFor(db), db),
+  listSchemas: async (db: string) => meta.listSchemas(await sessFor(db)),
 
   listRelations: async (db: string, schema: string) =>
     meta.listRelations(await sessFor(db), schema),
@@ -318,8 +319,9 @@ const bindings: Bindings = {
 
   setMcpEnabled: async (enabled: boolean) => {
     await config.setMcpEnabled(enabled);
-    if (enabled) mcp.start(mcpCtx);
-    else mcp.stop();
+    // Binding is async on Node — await it so getInfo() reports the real port.
+    if (enabled) await mcp.start(mcpCtx);
+    else await mcp.stop();
     return mcp.getInfo();
   },
 
@@ -417,7 +419,7 @@ async function handleRpc(req: Request): Promise<Response> {
 
 // --- serve ------------------------------------------------------------------
 
-const server = Bun.serve({
+const server = await serve({
   hostname: "127.0.0.1",
   port: 0,
   fetch: (req) => handleRequest(req),
@@ -430,7 +432,7 @@ console.log(`GRESUI running at http://127.0.0.1:${PORT}/ — press Ctrl+C to sto
 
 // Re-bind the MCP listener at boot when it was enabled (persisted flag).
 if (await config.getMcpEnabled()) {
-  const port = mcp.start(mcpCtx);
+  const port = await mcp.start(mcpCtx);
   console.log(`MCP server at http://127.0.0.1:${port}/mcp`);
 }
 

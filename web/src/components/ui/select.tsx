@@ -16,7 +16,7 @@ const SelectTrigger = forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      "flex h-8 w-full items-center justify-between gap-2 rounded-md border border-border bg-raised px-2.5 py-1.5 text-sm text-foreground placeholder:text-muted focus:outline-2 focus:outline-ring disabled:cursor-not-allowed disabled:opacity-50 data-[placeholder]:text-muted",
+      "flex h-8 w-full items-center justify-between gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground transition-colors placeholder:text-subtle hover:border-border-strong focus:outline-2 focus:outline-ring disabled:cursor-not-allowed disabled:opacity-50 data-[placeholder]:text-subtle",
       className,
     )}
     {...props}
@@ -38,7 +38,7 @@ const SelectContent = forwardRef<
       ref={ref}
       position={position}
       className={cn(
-        "relative z-50 max-h-72 min-w-32 overflow-hidden rounded-md border border-border bg-raised text-foreground shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
+        "relative z-50 max-h-72 min-w-32 overflow-hidden rounded-lg border border-border-strong bg-overlay text-foreground shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
         className,
       )}
       {...props}
@@ -71,7 +71,7 @@ const SelectItem = forwardRef<
   >
     <span className="absolute right-2 flex size-3.5 items-center justify-center">
       <SelectPrimitive.ItemIndicator>
-        <Check className="size-4 text-accent" />
+        <Check className="size-4 text-accent-text" />
       </SelectPrimitive.ItemIndicator>
     </span>
     <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>

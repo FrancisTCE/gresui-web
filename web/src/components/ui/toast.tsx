@@ -36,10 +36,10 @@ export function Toaster() {
             if (!open) store.dismiss(t.id);
           }}
           className={cn(
-            "pointer-events-auto flex w-full items-start gap-3 rounded-md border p-3 shadow-lg data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom-full",
+            "pointer-events-auto flex w-full items-start gap-3 rounded-lg border p-3 shadow-lg data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom-full",
             t.variant === "destructive"
               ? "border-danger/40 bg-danger/10 text-foreground"
-              : "border-border bg-raised text-foreground",
+              : "border-border-strong bg-overlay text-foreground",
           )}
         >
           <div className="min-w-0 flex-1">

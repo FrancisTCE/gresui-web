@@ -7,32 +7,21 @@ import { tags } from "@lezer/highlight";
 import CodeMirror from "@uiw/react-codemirror";
 import { useCallback, useMemo } from "react";
 
-const darkHighlight = HighlightStyle.define([
-  { tag: tags.keyword, color: "#7dd3fc" },
-  { tag: tags.string, color: "#86efac" },
-  { tag: tags.number, color: "#fdba74" },
-  { tag: tags.comment, color: "#8b93a1", fontStyle: "italic" },
-  { tag: tags.operator, color: "#dde1e6" },
-  { tag: tags.function(tags.variableName), color: "#c4b5fd" },
-  { tag: tags.punctuation, color: "#dde1e6" },
-  { tag: tags.typeName, color: "#93c5fd" },
-  { tag: tags.bool, color: "#f472b6" },
-  { tag: tags.null, color: "#f472b6" },
-  { tag: tags.propertyName, color: "#a5b4fc" },
-]);
-
-const lightHighlight = HighlightStyle.define([
-  { tag: tags.keyword, color: "#0550ae" },
-  { tag: tags.string, color: "#0a3069" },
-  { tag: tags.number, color: "#953800" },
-  { tag: tags.comment, color: "#6e7781", fontStyle: "italic" },
-  { tag: tags.operator, color: "#24292f" },
-  { tag: tags.function(tags.variableName), color: "#6639ba" },
-  { tag: tags.punctuation, color: "#24292f" },
-  { tag: tags.typeName, color: "#116329" },
-  { tag: tags.bool, color: "#cf222e" },
-  { tag: tags.null, color: "#cf222e" },
-  { tag: tags.propertyName, color: "#8250df" },
+/* One highlight style for both themes: every colour is a token that already
+   flips with .dark, and they are the same tokens the grid paints cell values
+   with — a number reads the same in the editor as it does in a result row. */
+const highlight = HighlightStyle.define([
+  { tag: tags.keyword, color: "var(--t-date)" },
+  { tag: tags.string, color: "var(--accent-text)" },
+  { tag: tags.number, color: "var(--t-number)" },
+  { tag: tags.bool, color: "var(--t-bool)" },
+  { tag: tags.null, color: "var(--t-bool)" },
+  { tag: tags.typeName, color: "var(--t-uuid)" },
+  { tag: tags.function(tags.variableName), color: "var(--t-json)" },
+  { tag: tags.propertyName, color: "var(--text)" },
+  { tag: tags.operator, color: "var(--text-muted)" },
+  { tag: tags.punctuation, color: "var(--text-muted)" },
+  { tag: tags.comment, color: "var(--text-subtle)", fontStyle: "italic" },
 ]);
 
 function editorTheme(dark: boolean) {
@@ -44,9 +33,10 @@ function editorTheme(dark: boolean) {
         height: "100%",
         fontSize: "13px",
       },
+      ".cm-line": { lineHeight: "1.6" },
       "&.cm-focused": { outline: "none" },
       ".cm-scroller": {
-        fontFamily: "ui-monospace, Menlo, Consolas, monospace",
+        fontFamily: "var(--font-mono)",
         backgroundColor: "var(--bg)",
       },
       ".cm-content": {
@@ -55,16 +45,21 @@ function editorTheme(dark: boolean) {
         color: "var(--text)",
       },
       ".cm-gutters": {
-        backgroundColor: "var(--bg-raised)",
-        color: "var(--text-muted)",
+        backgroundColor: "var(--bg)",
+        color: "var(--text-subtle)",
         border: "none",
+        paddingRight: "4px",
       },
-      ".cm-activeLine": { backgroundColor: "var(--bg-hover)" },
+      ".cm-activeLine": { backgroundColor: "var(--bg-raised)" },
       ".cm-activeLineGutter": {
-        backgroundColor: "var(--bg-hover)",
+        backgroundColor: "var(--bg-raised)",
         color: "var(--text)",
       },
-      ".cm-cursor": { borderLeftColor: "var(--accent)" },
+      ".cm-matchingBracket, &.cm-focused .cm-matchingBracket": {
+        backgroundColor: "var(--accent-soft)",
+        outline: "1px solid var(--accent)",
+      },
+      ".cm-cursor": { borderLeftColor: "var(--accent)", borderLeftWidth: "2px" },
       ".cm-selectionBackground": { backgroundColor: "var(--selection)" },
       "&.cm-focused .cm-selectionBackground": {
         backgroundColor: "var(--selection)",
@@ -89,7 +84,7 @@ export function SqlEditor({
     () => [
       sql(),
       editorTheme(theme === "dark"),
-      syntaxHighlighting(theme === "dark" ? darkHighlight : lightHighlight),
+      syntaxHighlighting(highlight),
       Prec.high(
         keymap.of([
           { key: "Mod-Enter", run: () => (onRun(), true) },

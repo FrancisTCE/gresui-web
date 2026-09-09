@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/gresui-web)](https://www.npmjs.com/package/gresui-web)
 
-gresui is a web app for browsing PostgreSQL databases, built with Bun and
+gresui is a web app for browsing PostgreSQL databases, built with Node and
 React. Tbh there was ai coding in this, code was reviewed. I did this because I found
 that I had a necessity for a simpler and good looking postgres client without all the
 visual clutter pgadmin gives. feel free to do what you want with this. I decided to share
@@ -24,16 +24,23 @@ Then run:
 gresui-web
 ```
 
-This starts a small local backend (it brings its own Bun runtime — nothing
-extra to install) and opens the app in your default browser. Everything runs
-locally on your machine; the backend is only reachable on `127.0.0.1`.
-Requires Node.js 22+.
+This starts a small local backend on the Node you already have — nothing extra
+to install — and opens the app in your default browser. Everything runs locally
+on your machine; the backend is only reachable on `127.0.0.1`. Requires
+Node.js 22.6+.
 
 ## Features
 
 - Connection management with save/delete
-- Schema and table browser sidebar
-- Data grid with filtering, sorting, and pagination
+- **Connect with a connection string** — paste a `postgresql://` URI or a
+  libpq `host=… dbname=…` DSN and the fields fill themselves; pasting one into
+  the Host box is recognised too
+- Schema and table browser sidebar, resizable and collapsible
+- **Command palette** (`Ctrl/Cmd+K`) — fuzzy-jump to any table on the server,
+  whether or not its branch of the tree has been expanded
+- Data grid with filtering, sorting, pagination and drag-to-resize columns
+- Values coloured by PostgreSQL type, so a column of dates never reads like
+  free text
 - SQL editor with syntax highlighting and history
 - EXPLAIN support
 - Full CRUD operations (insert, update, delete)
@@ -41,11 +48,24 @@ Requires Node.js 22+.
 - **MCP server** — exposes the connected database to AI clients (Claude
   Desktop, Cursor, …) with per-key tool scopes and table allowlists
 
+### Keyboard
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl/Cmd+K` | Command palette — jump to a table, or run an action |
+| `Ctrl/Cmd+B` | Show/hide the sidebar |
+| `Ctrl/Cmd+1..4` | Table / SQL / Info / MCP tab |
+| `Ctrl/Cmd+Enter` | Run the query in the SQL editor |
+
+Drag a column's right edge to resize it, or double-click that edge to
+auto-fit. The same gestures work on the sidebar's edge.
+
 ## Prerequisites
 
-- [Node.js](https://nodejs.org) 22+
-- [Bun](https://bun.sh) 1.3.x — for `npm run dev` (the published CLI bundles
-  its own Bun runtime, so end users don't need it)
+- [Node.js](https://nodejs.org) 22.6+ — the backend runs its TypeScript
+  directly (type stripping) and uses the built-in `node:sqlite`. On 24+ both
+  are on by default; older versions get the experimental flags from the
+  launcher automatically.
 - [Docker](https://www.docker.com) (optional, for a local test database)
 
 ## Quick start (dev mode)
@@ -60,6 +80,9 @@ npm run build
 # 3. Start the backend (serves the built frontend)
 npm run dev
 ```
+
+Run the unit tests with `npm test` — Node's built-in runner, no framework and
+no extra dependencies.
 
 ## Configuration & data storage
 
@@ -161,9 +184,12 @@ the same machinery as connection passwords.
 
 ## Architecture
 
-The backend (`backend/main.ts`, `backend/`) is a Bun process running a
-loopback-only HTTP static file server (never exposed beyond `127.0.0.1`) and a
-PostgreSQL driver wrapper (`postgres.js`). It serves the prebuilt React app and
+The backend (`backend/main.ts`, `backend/`) is a Node process running a
+loopback-only HTTP static file server — never exposed beyond `127.0.0.1` —
+and a PostgreSQL driver wrapper (`postgres.js`). Node runs the TypeScript
+sources as-is by stripping types; `backend/http.ts` is a small adapter that
+hands `node:http` requests to handlers written against the web `Request` /
+`Response` types, and config lives in the built-in `node:sqlite`. It serves the prebuilt React app and
 exposes a typed JSON-RPC endpoint (`/rpc`) that the frontend calls over HTTP.
 When enabled, it also runs the MCP server (`backend/mcp.ts`) on loopback port
 3939, which authenticates per-request bearer keys against encrypted key
@@ -180,7 +206,7 @@ between backend and frontend.
 
 | Backend               | Frontend                          |
 |-----------------------|-----------------------------------|
-| Bun                   | React 19                          |
+| Node 22.6+            | React 19                          |
 | postgres.js           | Vite 7                            |
 | @modelcontextprotocol/sdk | Tailwind CSS 4                 |
 | zod                   | Radix UI                          |

@@ -153,7 +153,7 @@ export function McpTab({ tabActive }: { tabActive: boolean }) {
           role="alert"
           className="mb-4 flex items-start gap-2 rounded-md border border-l-4 border-danger/40 border-l-danger bg-danger/10 px-3 py-2 text-sm text-foreground"
         >
-          <AlertCircle className="mt-0.5 size-4 shrink-0 text-danger" />
+          <AlertCircle className="mt-0.5 size-4 shrink-0 text-danger-text" />
           <span className="min-w-0 break-words font-mono text-xs leading-relaxed">
             MCP tools need an active connection — connect to a database first.
           </span>
@@ -164,7 +164,7 @@ export function McpTab({ tabActive }: { tabActive: boolean }) {
       <div className="mb-5 rounded-md border border-border bg-raised p-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-            <Plug className="size-4 text-accent" />
+            <Plug className="size-4 text-accent-text" />
             MCP Server
           </h2>
           <Button
@@ -438,9 +438,9 @@ export function McpTab({ tabActive }: { tabActive: boolean }) {
                       </td>
                       <td className="px-3 py-1.5 text-xs">
                         {e.ok ? (
-                          <span className="text-accent">ok</span>
+                          <span className="text-accent-text">ok</span>
                         ) : (
-                          <span className="text-danger">error</span>
+                          <span className="text-danger-text">error</span>
                         )}
                       </td>
                       <td className="px-3 py-1.5 text-xs text-muted">
