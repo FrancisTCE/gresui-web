@@ -1,0 +1,173 @@
+name: unpublish
+
+# Remove a published version from npm. Run it by hand: Actions → unpublish →
+# "Run workflow".
+#
+# This is irreversible, and npm enforces two rules worth knowing before you
+# reach for it:
+#
+#   1. Only within 72 hours of publishing. After that npm rejects it and the
+#      only route is a support request (https://www.npmjs.com/support).
+#   2. The version number is burned. npm will never accept a republish of
+#      that exact version, so the next release has to take a new number.
+#
+# `npm deprecate` is the reversible alternative — the version stays
+# installable but warns on install. Prefer it unless the version genuinely
+# has to disappear (leaked secret, wrong contents).
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Exact version to unpublish, e.g. 1.3.0"
+        required: true
+        type: string
+      confirm:
+        description: "Type <package>@<version> exactly, e.g. gresui-web@1.3.0"
+        required: true
+        type: string
+      dry_run:
+        description: "Check everything and stop short of unpublishing"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  unpublish:
+    runs-on: ubuntu-latest
+    # Same NPM environment as publish, so the token resolves — and so this
+    # job can be gated behind required reviewers there if you want a second
+    # pair of eyes on it (Settings → Environments → NPM → required reviewers).
+    environment: NPM
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          registry-url: "https://registry.npmjs.org"
+
+      # Inputs go through env, never straight into the script body: a value
+      # like `1.0.0"; rm -rf /` would otherwise be interpolated by Actions
+      # into the shell before bash ever sees it as data.
+      - name: Check the request
+        id: check
+        env:
+          VERSION: ${{ inputs.version }}
+          CONFIRM: ${{ inputs.confirm }}
+          TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          test -n "$TOKEN" || {
+            echo "::error::NPM_TOKEN is empty — add it to the NPM environment (Settings → Environments → NPM)."
+            exit 1
+          }
+
+          # Validate before anything reaches $GITHUB_OUTPUT: a newline in the
+          # input would otherwise let it forge additional step outputs.
+          # bash's =~ matches the whole string, so a trailing "\nevil=1" is
+          # rejected — grep would have accepted it, matching line by line.
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$VERSION' is not a valid semver version."
+            exit 1
+          fi
+
+          PKG=$(node -p "require('./package.json').name")
+          echo "package=$PKG" >> "$GITHUB_OUTPUT"
+          echo "spec=$PKG@$VERSION" >> "$GITHUB_OUTPUT"
+
+          if [ "$CONFIRM" != "$PKG@$VERSION" ]; then
+            echo "::error::Confirmation does not match. Expected '$PKG@$VERSION', got '$CONFIRM'."
+            exit 1
+          fi
+
+      - name: Check the version is unpublishable
+        id: preflight
+        env:
+          SPEC: ${{ steps.check.outputs.spec }}
+          PKG: ${{ steps.check.outputs.package }}
+          VERSION: ${{ inputs.version }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if ! npm view "$SPEC" version > /dev/null 2>&1; then
+            echo "::error::$SPEC is not published — nothing to unpublish."
+            exit 1
+          fi
+
+          # Unpublishing the only version removes the whole package, which is
+          # a different and much larger action than the one this workflow
+          # offers. It also needs `npm unpublish <pkg> --force`.
+          COUNT=$(npm view "$PKG" versions --json | jq 'if type == "array" then length else 1 end')
+          if [ "$COUNT" -le 1 ]; then
+            # Single-quoted: an unescaped backtick here is command
+            # substitution, and bash would run the very unpublish this step
+            # exists to refuse.
+            echo "::error::$VERSION is the only published version, so unpublishing it would remove the entire $PKG package from npm. This workflow will not do that — to do it deliberately, run 'npm unpublish $PKG --force' locally."
+            exit 1
+          fi
+
+          # npm's 72-hour rule. Checked here so the failure explains itself
+          # rather than arriving as a bare 403 from the registry.
+          PUBLISHED=$(npm view "$PKG" time --json | jq -r --arg v "$VERSION" '.[$v] // empty')
+          if [ -z "$PUBLISHED" ]; then
+            echo "::error::Could not read the publish time for $SPEC."
+            exit 1
+          fi
+
+          AGE_HOURS=$(( ( $(date -u +%s) - $(date -u -d "$PUBLISHED" +%s) ) / 3600 ))
+          echo "published=$PUBLISHED" >> "$GITHUB_OUTPUT"
+          echo "age_hours=$AGE_HOURS" >> "$GITHUB_OUTPUT"
+          echo "$SPEC was published $PUBLISHED ($AGE_HOURS h ago)."
+
+          if [ "$AGE_HOURS" -ge 72 ]; then
+            echo "::error::$SPEC is $AGE_HOURS hours old. npm only allows unpublishing within 72 hours; past that, ask npm support (https://www.npmjs.com/support). Consider 'npm deprecate' instead."
+            exit 1
+          fi
+
+      - name: Unpublish
+        env:
+          SPEC: ${{ steps.check.outputs.spec }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ "$DRY_RUN" = "true" ]; then
+            npm unpublish "$SPEC" --dry-run
+            echo "Dry run — $SPEC is still published."
+          else
+            npm unpublish "$SPEC"
+          fi
+
+      - name: Verify and report
+        if: always() && steps.preflight.outcome == 'success'
+        env:
+          SPEC: ${{ steps.check.outputs.spec }}
+          VERSION: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          PUBLISHED: ${{ steps.preflight.outputs.published }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -uo pipefail
+          {
+            echo "### unpublish $SPEC"
+            echo
+            echo "- Published: $PUBLISHED"
+            echo "- Dry run: $DRY_RUN"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # The registry is read through a CDN, so a moment's lag between the
+          # unpublish and the version disappearing from `npm view` is normal.
+          sleep 10
+          if npm view "$SPEC" version > /dev/null 2>&1; then
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "- Still published, as expected for a dry run." >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "- :warning: Still visible on the registry. This is usually CDN lag — re-check in a few minutes." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo "- Gone from the registry. **npm will not accept a republish of $VERSION** — the next release needs a new version number." >> "$GITHUB_STEP_SUMMARY"
+          fi
