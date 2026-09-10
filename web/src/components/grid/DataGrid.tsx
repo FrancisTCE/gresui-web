@@ -14,6 +14,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -122,6 +123,16 @@ export function DataGrid({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [viewW, setViewW] = useState(0);
 
+  // Keyboard cursor over the (virtualised) rows. A single tab stop on the
+  // grid itself, per the ARIA grid pattern — not one stop per row, which
+  // would be both slow with react-virtual and unpleasant to tab through.
+  // The active row is announced via aria-activedescendant rather than real
+  // DOM focus, because a row scrolled out of view is unmounted; focus would
+  // silently vanish the moment the virtualizer recycled it.
+  const gridBaseId = useId();
+  const [focusIdx, setFocusIdx] = useState(0);
+  const [gridFocused, setGridFocused] = useState(false);
+
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -141,6 +152,31 @@ export function DataGrid({
   useEffect(() => {
     setOverrides({});
   }, [colKey]);
+
+  // Keep the keyboard cursor inside range as the result set changes size —
+  // a filter can shrink `rows` out from under whatever index it was on.
+  useEffect(() => {
+    setFocusIdx((i) => Math.min(i, Math.max(0, rows.length - 1)));
+  }, [rows.length]);
+
+  // A new page starts the cursor back at its top, the same way opening the
+  // page does visually — carrying "row 7" over onto a different page's row 7
+  // would be a cursor position with no relationship to where it came from.
+  // `rowOffset` is the trigger (it encodes the page), not something the
+  // body reads.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
+  useEffect(() => {
+    setFocusIdx(0);
+  }, [rowOffset]);
+
+  // Mouse and keyboard share one cursor: opening a row's JSON pane by click
+  // moves the keyboard cursor there too, so arrow keys continue from it
+  // instead of wherever the keyboard cursor last happened to be.
+  useEffect(() => {
+    if (selectedRowIndex !== null && selectedRowIndex !== undefined) {
+      setFocusIdx(selectedRowIndex);
+    }
+  }, [selectedRowIndex]);
 
   const widths = useMemo(() => {
     const samples = rows.slice(0, 100);
@@ -266,12 +302,21 @@ export function DataGrid({
       // DB constraint rejects when NOT NULL
       value = null;
     }
+    // Not refocusing the grid here: commit also fires on blur (the input's
+    // onBlur and its Enter key share this one callback), and blur usually
+    // means the user's click already sent focus somewhere else on purpose —
+    // stealing it back to the grid would be the wrong kind of surprising.
     setEditing(null);
     await onCommitCell(rowData, colName, value);
   }
 
   function cancelEdit(): void {
+    // Escape is unambiguously a keyboard gesture — the <input> that had real
+    // focus is about to unmount, and without this the browser would drop
+    // focus to <body>, silently ending keyboard navigation until the next
+    // click. Sending it back to the grid keeps arrow keys working.
     setEditing(null);
+    scrollRef.current?.focus({ preventScroll: true });
   }
 
   function toggleRow(idx: number): void {
@@ -292,6 +337,52 @@ export function DataGrid({
     else onSortChange(null);
   }
 
+  /** Arrow/Home/End/PageUp/PageDown move the cursor; Enter/Space activate the
+   * row the same way a click does. Guarded to the container's own keydowns —
+   * a nested control (the sort header, the resizer, the cell editor, the
+   * select-all checkbox) has already claimed the keys it cares about, and
+   * this must not also react once they bubble up. */
+  function handleGridKeyDown(e: React.KeyboardEvent<HTMLDivElement>): void {
+    if (e.target !== e.currentTarget) return;
+    if (rows.length === 0 || editing) return;
+    const last = rows.length - 1;
+    const viewport = scrollRef.current?.clientHeight ?? ROW_H * 10;
+    const pageStep = Math.max(1, Math.floor(viewport / ROW_H) - 1);
+    let next = focusIdx;
+    switch (e.key) {
+      case "ArrowDown":
+        next = Math.min(last, focusIdx + 1);
+        break;
+      case "ArrowUp":
+        next = Math.max(0, focusIdx - 1);
+        break;
+      case "Home":
+        next = 0;
+        break;
+      case "End":
+        next = last;
+        break;
+      case "PageDown":
+        next = Math.min(last, focusIdx + pageStep);
+        break;
+      case "PageUp":
+        next = Math.max(0, focusIdx - pageStep);
+        break;
+      case "Enter":
+      case " ": {
+        const row = rows[focusIdx];
+        if (row !== undefined) onRowClick?.(row, focusIdx);
+        e.preventDefault();
+        return;
+      }
+      default:
+        return;
+    }
+    e.preventDefault();
+    setFocusIdx(next);
+    virtualizer.scrollToIndex(next, { align: "auto" });
+  }
+
   const allSelected =
     !!selected && selected.size === rows.length && rows.length > 0;
   const gridTemplate = `${GUTTER_W}px ${widths.map((w) => `${w}px`).join(" ")}`;
@@ -308,13 +399,36 @@ export function DataGrid({
           </span>
         </div>
       ) : null}
-      <div ref={scrollRef} className="h-full overflow-auto bg-background">
+      <div
+        ref={scrollRef}
+        role="grid"
+        aria-rowcount={rows.length + 1}
+        aria-multiselectable={selectable || undefined}
+        aria-activedescendant={
+          rows.length > 0 ? `${gridBaseId}-row-${focusIdx}` : undefined
+        }
+        tabIndex={0}
+        onKeyDown={handleGridKeyDown}
+        onFocus={() => setGridFocused(true)}
+        onBlur={() => setGridFocused(false)}
+        className="h-full overflow-auto bg-background focus:outline-none"
+      >
         {/* header */}
         <div
+          role="row"
+          // The row wrapper is structural, not a tab stop — real focus (and
+          // the roving cursor) lives on the grid container. -1 satisfies
+          // "this role must be focusable" without adding a stop to Tab order.
+          tabIndex={-1}
+          aria-rowindex={1}
           className="sticky top-0 z-20 grid select-none border-b border-border bg-raised text-xs font-medium text-muted"
           style={{ gridTemplateColumns: gridTemplate, minWidth: totalW }}
         >
-          <div className="sticky left-0 z-10 flex items-center justify-center border-r border-border bg-raised px-2 py-1">
+          <div
+            role="columnheader"
+            tabIndex={-1}
+            className="sticky left-0 z-10 flex items-center justify-center border-r border-border bg-raised px-2 py-1"
+          >
             {selectable ? (
               <button
                 type="button"
@@ -463,15 +577,19 @@ export function DataGrid({
             const isSelected = selected?.has(v.index) ?? false;
             const isCursor = selectedRowIndex === v.index;
             const read = wasRead(row);
+            const focused = gridFocused && focusIdx === v.index;
             return (
-              // Clicking a row opens the JSON pane, and there is no keyboard
-              // route to it yet. The right fix is arrow-key navigation across
-              // a single tab stop, the way the grid pattern prescribes —
-              // making every virtualised row its own tab stop would be worse
-              // than the gap it closes. Tracked separately.
-              // biome-ignore lint/a11y: see above
               <div
                 key={v.key}
+                id={`${gridBaseId}-row-${v.index}`}
+                role="row"
+                // -1: not its own tab stop (the grid container is, see
+                // above); Enter/Space are handled here too, defensively, in
+                // case something other than the roving cursor ever puts
+                // real focus on the row directly.
+                tabIndex={-1}
+                aria-rowindex={v.index + 2}
+                aria-selected={isSelected}
                 className={cn(
                   "group/row absolute left-0 right-0 grid border-b border-border/50 text-[13px]",
                   isSelected || isCursor
@@ -491,6 +609,10 @@ export function DataGrid({
                     !isSelected &&
                     !isCursor &&
                     "bg-agent-read animate-agent-read",
+                  // The keyboard cursor, shown only while the grid itself has
+                  // focus — inset so it can't be clipped and doesn't fight
+                  // the selection tint it usually sits on top of.
+                  focused && "ring-1 ring-inset ring-ring",
                 )}
                 title={read ? "An MCP agent read this row" : undefined}
                 style={{
@@ -507,11 +629,27 @@ export function DataGrid({
                     startEdit(v.index, Number(cell.dataset.col));
                   }
                 }}
-                onClick={() => onRowClick?.(row, v.index)}
+                onClick={() => {
+                  // A click hands the keyboard cursor the row it landed on,
+                  // so arrow keys continue from here without an extra Tab.
+                  // .focus() after a pointer interaction does not trigger
+                  // :focus-visible, so this does not draw a stray ring.
+                  setFocusIdx(v.index);
+                  scrollRef.current?.focus({ preventScroll: true });
+                  onRowClick?.(row, v.index);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onRowClick?.(row, v.index);
+                  }
+                }}
               >
                 {/* Gutter: row number, swapped for the checkbox on hover or
                     once the row is part of a selection. */}
                 <div
+                  role="gridcell"
+                  tabIndex={-1}
                   className={cn(
                     "sticky left-0 z-10 flex items-center justify-center border-r px-2",
                     isSelected || isCursor
@@ -558,6 +696,8 @@ export function DataGrid({
                     <div
                       key={c.name}
                       data-col={i}
+                      role="gridcell"
+                      tabIndex={-1}
                       className={cn(
                         "min-w-0 truncate border-r border-border/40 px-2 py-1 leading-5",
                         i === widths.length - 1 && "border-r-0",
