@@ -1,6 +1,6 @@
 // SQL editor execution: runSql, cancel, history recording.
 
-import type { QueryResult } from "../../shared/types.ts";
+import type { QueryResult } from "../shared/types.ts";
 import { pushHistory } from "./config.ts";
 import type { PgSession, QueryOutcome } from "./pg.ts";
 

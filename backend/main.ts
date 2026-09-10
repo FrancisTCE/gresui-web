@@ -19,10 +19,12 @@ import type {
   CellValue,
   ConnectionConfig,
   ConnStatus,
+  McpKeyInfo,
   Settings,
 } from "../shared/types.ts";
 import * as config from "./config.ts";
 import * as data from "./data.ts";
+import * as events from "./events.ts";
 import { serve } from "./http.ts";
 import * as mcp from "./mcp.ts";
 import * as meta from "./meta.ts";
@@ -38,6 +40,8 @@ const DIST = path.join(ROOT, "dist");
 
 // Tee console output to gresui.log (cwd, falling back to the config dir).
 let logPath: string | null = null;
+
+const logStamp = (): string => new Date().toISOString();
 
 function setupLogging(): void {
   const candidates = [`${process.cwd()}/gresui.log`, `${config.configDir()}/gresui.log`];
@@ -56,13 +60,15 @@ function setupLogging(): void {
     }
   }
   if (!logPath) return;
-  const ts = () => new Date().toISOString();
+  // Pinned: `logPath` is module-level and mutable, so the closure below has
+  // to hold the value the guard just proved non-null.
+  const dest = logPath;
   const write = (level: string, args: unknown[]): void => {
-    const line = `[${ts()}] ${level} ${args.map((a) =>
+    const line = `[${logStamp()}] ${level} ${args.map((a) =>
       typeof a === "string" ? a : JSON.stringify(a)
     ).join(" ")}\n`;
     try {
-      const fd = openSync(logPath, "a");
+      const fd = openSync(dest, "a");
       try {
         writeSync(fd, line);
       } finally {
@@ -151,7 +157,57 @@ const RPC_TOKEN = crypto.randomUUID();
 function handleRequest(req: Request): Response | Promise<Response> {
   const u = new URL(req.url);
   if (req.method === "POST" && u.pathname === "/rpc") return handleRpc(req);
+  if (req.method === "GET" && u.pathname === "/events") return handleEvents(req);
   return serveStatic(req);
+}
+
+/** Server-sent events: MCP tool calls as they happen.
+ *
+ * Authenticated with the same header token as /rpc, which is why the client
+ * reads this with fetch() rather than EventSource — EventSource cannot set
+ * headers, and the alternative is putting the token in a URL. */
+function handleEvents(req: Request): Response {
+  if (req.headers.get("x-gresui-token") !== RPC_TOKEN) {
+    return rpcError(401, "Unauthorized", "invalid token");
+  }
+  const enc = new TextEncoder();
+  const sub: {
+    off?: () => void;
+    heartbeat?: ReturnType<typeof setInterval>;
+  } = {};
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const send = (frame: string): void => {
+        try {
+          controller.enqueue(enc.encode(frame));
+        } catch {
+          // Stream already closed by the other side; cancel() cleans up.
+        }
+      };
+      // Flush headers through any buffering proxy and tell the client the
+      // stream is live before the first real event.
+      send(": open\n\n");
+      sub.off = events.subscribe((e) => {
+        send(`event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`);
+      });
+      // A comment frame keeps idle connections from being reaped, and gives
+      // the client a way to notice a dead socket.
+      sub.heartbeat = setInterval(() => send(": ping\n\n"), 25_000);
+    },
+    cancel() {
+      sub.off?.();
+      if (sub.heartbeat) clearInterval(sub.heartbeat);
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+    },
+  });
 }
 
 // --- session state ----------------------------------------------------------
@@ -163,7 +219,7 @@ function primary(): PgSession {
   return pool.getPrimary();
 }
 
-async function sessFor(db: string): Promise<PgSession> {
+function sessFor(db: string): Promise<PgSession> {
   if (!pool) throw new Error("Not connected");
   return pool.get(db);
 }
@@ -200,9 +256,9 @@ function statusOf(s: PgSession): ConnStatus {
 // with the connection credentials), so the configured-database allowlist is
 // enforced here — never reach pool.get with an unlisted name.
 const mcpCtx: mcp.Ctx = {
-  getSession: async (db?: string) => {
+  getSession: (db?: string) => {
     if (!pool) throw new Error("Not connected");
-    if (db === undefined) return pool.getPrimary();
+    if (db === undefined) return Promise.resolve(pool.getPrimary());
     if (!pool.databases().includes(db)) {
       throw new Error(`database not in this connection: ${db}`);
     }
@@ -343,7 +399,26 @@ const bindings: Bindings = {
   },
 
   deleteMcpKey: (id) => config.deleteMcpKey(id),
+
+  setMcpLens: async (keyId, lens) => {
+    mcp.validateMcpLens(lens);
+    await config.setMcpLens(keyId, lens);
+    return keyById(keyId);
+  },
+
+  clearMcpLens: async (keyId, table) => {
+    await config.clearMcpLens(keyId, table);
+    return keyById(keyId);
+  },
 };
+
+/** Re-read one key after a lens change, so the caller gets the same shape
+ * listMcpKeys hands out rather than having to refetch the whole list. */
+async function keyById(id: string): Promise<McpKeyInfo> {
+  const found = (await config.listMcpKeys()).find((k) => k.id === id);
+  if (!found) throw new Error(`no such API key: ${id}`);
+  return found;
+}
 
 // --- HTTP RPC ---------------------------------------------------------------
 
@@ -439,15 +514,16 @@ if (await config.getMcpEnabled()) {
 // Open the default browser (best-effort).
 try {
   const url = `http://127.0.0.1:${PORT}/`;
-  const open = process.platform === "darwin"
+  const open: [string, ...string[]] = process.platform === "darwin"
     ? ["open", url]
     : process.platform === "win32"
     ? ["cmd", "/c", "start", "", url]
     : ["xdg-open", url];
+  const [exe, ...argv] = open;
   // A missing opener surfaces as an async "error" event (ENOENT), not a sync
   // throw — without a handler it becomes an uncaught exception and kills the
   // server. Never let that happen: the printed URL is enough.
-  const child = spawn(open[0], open.slice(1), { stdio: "ignore" });
+  const child = spawn(exe, argv, { stdio: "ignore" });
   child.on("error", () => {
     // no opener available — the printed URL is enough
   });

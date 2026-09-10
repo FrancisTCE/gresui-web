@@ -114,9 +114,13 @@ export function CellFilterMenu({
     <>
       {items.map((it, idx) =>
         it.kind === "sep" ? (
+          // A fixed menu, built identically on every render: the position is
+          // the identity, and there is nothing else to key on.
+          // oxlint-disable-next-line react/no-array-index-key
           <ContextMenuSeparator key={idx} />
         ) : (
           <ClauseItem
+            // oxlint-disable-next-line react/no-array-index-key
             key={idx}
             label={it.label}
             clause={it.clause}

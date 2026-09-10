@@ -21,7 +21,10 @@ window.addEventListener("unhandledrejection", (e) => {
   report("unhandledrejection", e.reason);
 });
 
-createRoot(document.getElementById("root")!).render(
+const root = document.getElementById("root");
+if (!root) throw new Error("index.html is missing #root");
+
+createRoot(root).render(
   <StrictMode>
     <App />
   </StrictMode>,
