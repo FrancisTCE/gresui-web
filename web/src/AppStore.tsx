@@ -49,6 +49,22 @@ export interface AppStoreValue {
   setViewStatus(s: ViewStatus): void;
 }
 
+/** Paint the theme, and leave a hint index.html can read before the next
+ * load's first paint — the authoritative value lives in the backend's
+ * settings and only arrives after React has already mounted. */
+function applyTheme(theme: "dark" | "light"): void {
+  const el = document.documentElement;
+  el.classList.toggle("dark", theme !== "light");
+  // Without this, form controls and scrollbars keep the previous theme's
+  // native styling until reload.
+  el.style.colorScheme = theme;
+  try {
+    localStorage.setItem("gresui.theme", theme);
+  } catch {
+    // private mode / blocked storage — only costs a flash on the next load
+  }
+}
+
 const AppStoreContext = createContext<AppStoreValue | null>(null);
 
 export function useAppStore(): AppStoreValue {
@@ -85,7 +101,7 @@ export function AppStoreProvider({
   }
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", curSettings.theme !== "light");
+    applyTheme(curSettings.theme);
   }, [curSettings.theme]);
 
   const value = useMemo<AppStoreValue>(
@@ -102,7 +118,7 @@ export function AppStoreProvider({
       goHome,
       setViewStatus,
       setTheme: (t) => {
-        document.documentElement.classList.toggle("dark", t !== "light");
+        applyTheme(t); // ahead of the state round-trip, so the click feels instant
         setCurSettings((s) => ({ ...s, theme: t }));
         try {
           call(getBindings().setSettings({ theme: t })).catch(() => {});

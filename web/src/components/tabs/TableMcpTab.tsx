@@ -169,10 +169,8 @@ export function TableMcpTab({
       {/* Verdict strip — the one line the user came for. */}
       <div
         className={cn(
-          "mb-5 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-l-4 px-3 py-2.5",
-          live
-            ? "border-accent/40 border-l-accent bg-accent/10"
-            : "border-border border-l-border-strong bg-raised",
+          "mb-5 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border px-3 py-2.5",
+          live ? "border-accent/40 bg-accent/10" : "border-border bg-raised",
         )}
       >
         <ServerStateDot enabled={live} />

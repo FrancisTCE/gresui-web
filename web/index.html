@@ -1,12 +1,35 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GRESUI</title>
+    <script>
+      // The theme lives in the backend's settings, which arrive over RPC long
+      // after first paint — so the page used to be hard-coded dark and a light
+      // user got a dark flash on every load, plus an <html> that stayed dark
+      // behind the app (visible on overscroll). Mirror the choice into
+      // localStorage and apply it here, before anything is painted.
+      (function () {
+        var t = "dark";
+        try {
+          var saved = localStorage.getItem("gresui.theme");
+          if (saved === "light" || saved === "dark") t = saved;
+        } catch (e) {
+          // private mode / blocked storage — dark is the app default
+        }
+        var el = document.documentElement;
+        if (t === "dark") el.classList.add("dark");
+        el.style.colorScheme = t;
+      })();
+    </script>
     <style>
+      /* Pre-mount canvas; must match --bg in src/index.css for both themes. */
       html {
-        background: #1d2129;
+        background: #ffffff;
+      }
+      html.dark {
+        background: #12151b;
       }
     </style>
     <style>
@@ -19,10 +42,14 @@
         align-items: center;
         justify-content: center;
         gap: 16px;
-        background: #1d2129;
-        color: #dde1e6;
+        background: #ffffff;
+        color: #12151b;
         font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
         z-index: 9999;
+      }
+      .dark #splash {
+        background: #12151b;
+        color: #dde1e6;
       }
       #splash .logo {
         font-size: 22px;
@@ -34,8 +61,11 @@
         width: 120px;
         height: 3px;
         border-radius: 2px;
-        background: #2b323d;
+        background: #e4e7ec;
         overflow: hidden;
+      }
+      .dark #splash .bar {
+        background: #2b323d;
       }
       #splash .bar::after {
         content: "";
