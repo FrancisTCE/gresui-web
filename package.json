@@ -22,15 +22,16 @@
   },
   "files": [
     "bin/",
-    "backend/",
-    "shared/",
+    "server/",
     "dist/"
   ],
   "scripts": {
-    "build": "vite build",
+    "build": "npm run build:web && npm run build:server",
+    "build:web": "vite build",
+    "build:server": "node scripts/build-server.mjs",
     "dev": "node bin/gresui-web.js",
     "test": "node --test \"web/src/**/*.test.ts\"",
-    "prepublishOnly": "npm run build"
+    "prepack": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
@@ -63,6 +64,7 @@
     "@vitejs/plugin-react": "^5.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "esbuild": "^0.28.1",
     "lucide-react": "^1.28.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

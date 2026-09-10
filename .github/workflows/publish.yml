@@ -35,7 +35,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # prepublishOnly runs `npm run build`, so dist/ is built fresh here.
+      # prepack runs `npm run build` as npm packs the tarball, so both dist/
+      # (frontend) and server/ (compiled backend) are built fresh here.
       - name: Check NPM_TOKEN is set
         env:
           TOKEN: ${{ secrets.NPM_TOKEN }}
