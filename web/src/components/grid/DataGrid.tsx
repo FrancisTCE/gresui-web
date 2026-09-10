@@ -14,6 +14,7 @@ import {
 } from "react";
 
 import type { CellValue, Row } from "../../../../shared/types.ts";
+import { rowKey } from "../../../../shared/row-key.ts";
 import { CellFilterMenu, HeaderFilterMenu } from "./QuickFilterMenu.tsx";
 import { isNumericType, MONO_TYPES, valueClass } from "@/lib/pg-types.ts";
 import { cn } from "@/lib/utils.ts";
@@ -37,31 +38,32 @@ export interface DataGridProps {
   columns: GridColumn[];
   rows: Row[];
   /** Editable mode: selection + inline edit + sort. SQL results pass false. */
-  editable?: boolean;
-  pkColumns?: string[];
+  editable?: boolean | undefined;
+  pkColumns?: string[] | undefined;
   /** Show the sticky checkbox column. */
-  selectable?: boolean;
-  sortState?: SortState | null;
-  onSortChange?: (s: SortState | null) => void;
+  selectable?: boolean | undefined;
+  sortState?: SortState | null | undefined;
+  onSortChange?: ((s: SortState | null) => void) | undefined;
   /** Right-click preset filters (Table tab only). Absent → no context menus. */
-  onQuickFilter?: (clause: string, mode?: "replace" | "append") => void;
-  onCommitCell?: (
-    row: Row,
-    column: string,
-    value: CellValue,
-  ) => Promise<void>;
-  selected?: Set<number>;
-  onSelectionChange?: (sel: Set<number>) => void;
-  onRowClick?: (row: Row, index: number) => void;
-  selectedRowIndex?: number | null;
+  onQuickFilter?: ((clause: string, mode?: "replace" | "append") => void) | undefined;
+  onCommitCell?:
+    | ((row: Row, column: string, value: CellValue) => Promise<void>)
+    | undefined;
+  selected?: Set<number> | undefined;
+  onSelectionChange?: ((sel: Set<number>) => void) | undefined;
+  onRowClick?: ((row: Row, index: number) => void) | undefined;
+  selectedRowIndex?: number | null | undefined;
   /** Index of the first row on this page, so the gutter can number rows
    * absolutely rather than restarting at 1 on every page. */
-  rowOffset?: number;
+  rowOffset?: number | undefined;
+  /** rowKey() of rows an MCP agent read moments ago — those rows flash. Only
+   * the Table tab passes this; SQL results have no relation to attribute to. */
+  agentRows?: ReadonlySet<string> | undefined;
   /** Rows are being fetched — shows a spinner instead of an "empty" verdict. */
-  loading?: boolean;
+  loading?: boolean | undefined;
   /** Shown when there are no rows and nothing is loading. */
-  emptyMessage?: string;
-  className?: string;
+  emptyMessage?: string | undefined;
+  className?: string | undefined;
 }
 
 const ROW_H = 28;
@@ -98,6 +100,7 @@ export function DataGrid({
   onSelectionChange,
   onRowClick,
   selectedRowIndex = null,
+  agentRows,
   rowOffset = 0,
   loading = false,
   emptyMessage = "No rows.",
@@ -137,10 +140,30 @@ export function DataGrid({
       out = base.map((w) => Math.floor(Math.min(w * scale, MAX_STRETCH_W)));
     }
     // A dragged width always wins over the estimate, at any viewport size.
-    return out.map((w, i) => overrides[columns[i].name] ?? w);
+    return out.map((w, i) => {
+      const name = columns[i]?.name;
+      return (name === undefined ? undefined : overrides[name]) ?? w;
+    });
   }, [columns, rows, viewW, overrides]);
 
   const totalW = widths.reduce((a, b) => a + b, 0) + GUTTER_W;
+
+  // Where the primary key sits in this result. Absent — a projection without
+  // it, or a relation that has none — means rows cannot be matched to what an
+  // agent read, so nothing flashes rather than the wrong thing flashing.
+  const pkIdx = useMemo(() => {
+    if (!agentRows || agentRows.size === 0 || pkColumns.length === 0) return null;
+    const idx = pkColumns.map((pk) => columns.findIndex((c) => c.name === pk));
+    return idx.every((i) => i >= 0) ? idx : null;
+  }, [agentRows, pkColumns, columns]);
+
+  const wasRead = useCallback(
+    (row: Row): boolean => {
+      if (!pkIdx || !agentRows) return false;
+      return agentRows.has(rowKey(pkIdx.map((i) => row[i] ?? null)));
+    },
+    [pkIdx, agentRows],
+  );
 
   const startResize = useCallback(
     (e: React.PointerEvent, colIdx: number, currentW: number) => {
@@ -328,7 +351,7 @@ export function DataGrid({
                 </span>
                 {/* Resizer sits on the seam and swallows the sort click. */}
                 <span
-                  onPointerDown={(e) => startResize(e, i, widths[i])}
+                  onPointerDown={(e) => startResize(e, i, widths[i] ?? MIN_COL_W)}
                   onDoubleClick={(e) => {
                     e.stopPropagation();
                     autoFit(i);
@@ -369,8 +392,12 @@ export function DataGrid({
         >
           {virtualizer.getVirtualItems().map((v) => {
             const row = rows[v.index];
+            // The virtualizer only ever asks for indices inside `rows`; this
+            // is the guard that lets the row body index it without doubt.
+            if (row === undefined) return null;
             const isSelected = selected?.has(v.index) ?? false;
             const isCursor = selectedRowIndex === v.index;
+            const read = wasRead(row);
             return (
               <div
                 key={v.key}
@@ -378,8 +405,21 @@ export function DataGrid({
                   "group/row absolute left-0 right-0 grid border-b border-border/50 text-[13px]",
                   isSelected || isCursor
                     ? "bg-accent-soft"
+                    // A read row keeps its own hover shade. The plain hover
+                    // utility is emitted after bg-agent-read and would
+                    // otherwise win, erasing the marker on exactly the row the
+                    // pointer — and so the eye — is resting on.
+                    : read
+                    ? "hover:bg-agent-read-hover"
                     : "hover:bg-surface/70",
+                  // A selection the user made must stay legible, so an agent
+                  // read only tints a row that is not already highlighted.
+                  // The tint is static and the pulse is decorative: with
+                  // reduced motion the row still shows as read.
+                  read && !isSelected && !isCursor &&
+                    "bg-agent-read animate-agent-read",
                 )}
+                title={read ? "An MCP agent read this row" : undefined}
                 style={{
                   top: 0,
                   transform: `translateY(${v.start}px)`,

@@ -31,6 +31,7 @@ import type {
   ConnectionConfig,
   HistoryEntry,
   McpKeyInfo,
+  McpLens,
   McpUsageEntry,
   Settings,
   SettingsPatch,
@@ -243,11 +244,41 @@ function initSchema(db: Database): void {
       ok INTEGER NOT NULL,
       duration_ms INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS mcp_lenses (
+      key_id TEXT NOT NULL,
+      table_ref TEXT NOT NULL,
+      hidden_columns TEXT NOT NULL,
+      row_filter TEXT NOT NULL,
+      PRIMARY KEY (key_id, table_ref)
+    );
   `);
-  // Idempotent column migration for DBs created before the bundle feature.
-  const cols = db.prepare("PRAGMA table_info(connections)").all() as { name: string }[];
-  if (!cols.some((c) => c.name === "databases")) {
-    db.exec("ALTER TABLE connections ADD COLUMN databases TEXT");
+  // Idempotent column migrations. Existing installs keep their data; the new
+  // columns read as NULL, which every consumer already treats as "unknown".
+  addColumns(db, "connections", { databases: "TEXT" });
+  addColumns(db, "mcp_usage", {
+    target: "TEXT",
+    args: "TEXT",
+    row_count: "INTEGER",
+    row_keys: "TEXT",
+    lens: "TEXT",
+    error: "TEXT",
+  });
+}
+
+/** ALTER TABLE ADD COLUMN for whichever of `spec` is missing. */
+function addColumns(
+  db: Database,
+  table: string,
+  spec: Record<string, string>,
+): void {
+  const have = new Set(
+    (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[])
+      .map((c) => c.name),
+  );
+  for (const [name, type] of Object.entries(spec)) {
+    if (!have.has(name)) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+    }
   }
 }
 
@@ -413,7 +444,7 @@ export async function getSettings(): Promise<Settings> {
   const { db } = state();
   const rows = db
     .prepare("SELECT key, value FROM settings")
-    .all() as Record<string, string>[];
+    .all() as { key: string; value: string }[];
   const flat: Record<string, string> = {};
   for (const r of rows) flat[r.key] = r.value;
   const s: Settings = {
@@ -437,7 +468,7 @@ export async function setSettings(patch: SettingsPatch): Promise<Settings> {
   const next: Settings = {
     ...cur,
     ...patch,
-    window: { ...cur.window, ...(patch.window ?? {}) },
+    window: { ...cur.window, ...patch.window },
   };
   const { db } = state();
   const upsert = db.prepare(
@@ -506,7 +537,7 @@ export async function setMcpEnabled(v: boolean): Promise<void> {
 
 function generateApiKey(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return "gresui_" + btoa(String.fromCharCode(...bytes))
+  return "gresui_" + btoa(String.fromCodePoint(...bytes))
     .replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 }
 
@@ -520,6 +551,7 @@ function timingSafeEqualStr(a: string, b: string): boolean {
 function rowToMcpKey(
   r: Record<string, unknown>,
   decrypted: string,
+  lenses: McpLens[] = [],
 ): McpKeyInfo {
   return {
     id: String(r.id),
@@ -527,6 +559,7 @@ function rowToMcpKey(
     key: decrypted,
     scopes: JSON.parse(String(r.scopes)) as string[],
     tables: JSON.parse(String(r.tables)) as string[],
+    lenses,
     createdAt: String(r.created_at),
     lastUsedAt: r.last_used_at ? String(r.last_used_at) : null,
   };
@@ -559,6 +592,7 @@ export async function createMcpKey(req: {
     key: raw,
     scopes: req.scopes,
     tables: req.tables,
+    lenses: [],
     createdAt: now,
     lastUsedAt: null,
   };
@@ -582,11 +616,15 @@ export async function updateMcpKey(
   return rowToMcpKey(
     { ...existing, name, scopes: JSON.stringify(scopes), tables: JSON.stringify(tables) },
     await decryptSecret(String(existing.key_enc), key),
+    loadLenses(db, id),
   );
 }
 
 export async function deleteMcpKey(id: string): Promise<void> {
   await ensureReady();
+  // Lenses are meaningless without their key, and a recycled UUID must never
+  // inherit them.
+  state().db.prepare("DELETE FROM mcp_lenses WHERE key_id = ?").run(id);
   state().db.prepare("DELETE FROM mcp_keys WHERE id = ?").run(id);
 }
 
@@ -596,9 +634,14 @@ export async function listMcpKeys(): Promise<McpKeyInfo[]> {
   const rows = db
     .prepare("SELECT * FROM mcp_keys ORDER BY created_at, rowid")
     .all() as Record<string, unknown>[];
+  const byKey = lensesByKey(db);
   return await Promise.all(
     rows.map(async (r) =>
-      rowToMcpKey(r, await decryptSecret(String(r.key_enc), key))
+      rowToMcpKey(
+        r,
+        await decryptSecret(String(r.key_enc), key),
+        byKey.get(String(r.id)) ?? [],
+      )
     ),
   );
 }
@@ -613,10 +656,77 @@ export async function findMcpKeyByValue(raw: string): Promise<McpKeyInfo | null>
   for (const r of rows) {
     const decrypted = await decryptSecret(String(r.key_enc), key);
     if (decrypted.length > 0 && timingSafeEqualStr(decrypted, raw)) {
-      return rowToMcpKey(r, decrypted);
+      // Lenses are loaded on every authenticated call rather than cached:
+      // tightening one in the UI has to take effect on the agent's next
+      // request, not whenever a cache happened to expire.
+      return rowToMcpKey(r, decrypted, loadLenses(db, String(r.id)));
     }
   }
   return null;
+}
+
+// --- lenses -------------------------------------------------------------------
+
+function rowToLens(r: Record<string, unknown>): McpLens {
+  return {
+    table: String(r.table_ref),
+    hiddenColumns: JSON.parse(String(r.hidden_columns)) as string[],
+    rowFilter: String(r.row_filter),
+  };
+}
+
+function loadLenses(db: Database, keyId: string): McpLens[] {
+  const rows = db
+    .prepare("SELECT * FROM mcp_lenses WHERE key_id = ? ORDER BY table_ref")
+    .all(keyId) as Record<string, unknown>[];
+  return rows.map((r) => rowToLens(r));
+}
+
+function lensesByKey(db: Database): Map<string, McpLens[]> {
+  const rows = db
+    .prepare("SELECT * FROM mcp_lenses ORDER BY table_ref")
+    .all() as Record<string, unknown>[];
+  const out = new Map<string, McpLens[]>();
+  for (const r of rows) {
+    const id = String(r.key_id);
+    const list = out.get(id) ?? [];
+    list.push(rowToLens(r));
+    out.set(id, list);
+  }
+  return out;
+}
+
+/** Upsert one key's lens on one table. An unrestricted lens (nothing hidden,
+ * no filter) is stored as a deletion, so "no lens" has one representation. */
+export async function setMcpLens(keyId: string, lens: McpLens): Promise<void> {
+  await ensureReady();
+  const { db } = state();
+  if (!db.prepare("SELECT 1 FROM mcp_keys WHERE id = ?").get(keyId)) {
+    throw new Error(`no such API key: ${keyId}`);
+  }
+  if (lens.hiddenColumns.length === 0 && lens.rowFilter.trim() === "") {
+    await clearMcpLens(keyId, lens.table);
+    return;
+  }
+  db.prepare(
+    `INSERT INTO mcp_lenses (key_id, table_ref, hidden_columns, row_filter)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(key_id, table_ref) DO UPDATE SET
+       hidden_columns = excluded.hidden_columns,
+       row_filter = excluded.row_filter`,
+  ).run(
+    keyId,
+    lens.table,
+    JSON.stringify(lens.hiddenColumns),
+    lens.rowFilter.trim(),
+  );
+}
+
+export async function clearMcpLens(keyId: string, table: string): Promise<void> {
+  await ensureReady();
+  state().db
+    .prepare("DELETE FROM mcp_lenses WHERE key_id = ? AND table_ref = ?")
+    .run(keyId, table);
 }
 
 export async function touchMcpKey(id: string): Promise<void> {
@@ -628,37 +738,86 @@ export async function touchMcpKey(id: string): Promise<void> {
 
 // --- usage recording ----------------------------------------------------------
 
-/** Record one authenticated MCP tool call; cap at MCP_USAGE_CAP, newest kept. */
-export async function recordMcpUsage(e: {
-  keyId: string;
-  tool: string;
-  ok: boolean;
-  durationMs: number;
-}): Promise<void> {
+/** What a caller hands in; the id and timestamp are assigned here. */
+export type McpUsageInput = Omit<McpUsageEntry, "id" | "ts" | "keyName">;
+
+/** Record one authenticated MCP tool call and return the stored row — the
+ * live feed publishes exactly what the history will replay, so a client that
+ * reconnects mid-stream cannot end up with two different versions of a call.
+ * Capped at MCP_USAGE_CAP, newest kept. */
+export async function recordMcpUsage(e: McpUsageInput): Promise<McpUsageEntry> {
   await ensureReady();
-  state().db.prepare(
-    "INSERT INTO mcp_usage (ts, key_id, tool, ok, duration_ms) VALUES (?, ?, ?, ?, ?)",
-  ).run(new Date().toISOString(), e.keyId, e.tool, e.ok ? 1 : 0, e.durationMs);
-  state().db.prepare(
+  const { db } = state();
+  const ts = new Date().toISOString();
+  const info = db.prepare(
+    `INSERT INTO mcp_usage
+       (ts, key_id, tool, ok, duration_ms, target, args, row_count, row_keys, lens, error)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    ts,
+    e.keyId,
+    e.tool,
+    e.ok ? 1 : 0,
+    e.durationMs,
+    e.target,
+    e.args === null ? null : JSON.stringify(e.args),
+    e.rowCount,
+    e.rowKeys === null ? null : JSON.stringify(e.rowKeys),
+    e.lens === null ? null : JSON.stringify(e.lens),
+    e.error,
+  );
+  db.prepare(
     `DELETE FROM mcp_usage WHERE id NOT IN
       (SELECT id FROM mcp_usage ORDER BY id DESC LIMIT ?)`,
   ).run(MCP_USAGE_CAP);
+  const name = db.prepare("SELECT name FROM mcp_keys WHERE id = ?")
+    .get(e.keyId) as { name?: string } | null;
+  return {
+    ...e,
+    id: Number(info.lastInsertRowid),
+    ts,
+    keyName: name?.name ?? null,
+  };
 }
 
-/** Newest first; key names are LEFT JOINed (null after key deletion). */
-export async function listMcpUsage(): Promise<McpUsageEntry[]> {
-  await ensureReady();
-  const rows = state().db.prepare(
-    `SELECT u.ts, u.key_id, u.tool, u.ok, u.duration_ms, k.name AS key_name
-     FROM mcp_usage u LEFT JOIN mcp_keys k ON k.id = u.key_id
-     ORDER BY u.id DESC LIMIT ?`,
-  ).all(MCP_USAGE_CAP) as Record<string, unknown>[];
-  return rows.map((r) => ({
+/** Rows written before a column existed read as NULL; every field added after
+ * the first release is therefore optional all the way to the UI. */
+function jsonColumn<T>(v: unknown): T | null {
+  if (v === null || v === undefined) return null;
+  try {
+    return JSON.parse(String(v)) as T;
+  } catch {
+    return null; // hand-edited row — the entry is still worth showing
+  }
+}
+
+function rowToUsage(r: Record<string, unknown>): McpUsageEntry {
+  return {
+    id: Number(r.id),
     ts: String(r.ts),
     keyId: String(r.key_id),
     keyName: r.key_name !== null && r.key_name !== undefined ? String(r.key_name) : null,
     tool: String(r.tool),
     ok: r.ok === 1,
     durationMs: Number(r.duration_ms),
-  }));
+    target: r.target !== null && r.target !== undefined ? String(r.target) : null,
+    args: jsonColumn<Record<string, unknown>>(r.args),
+    rowCount: r.row_count !== null && r.row_count !== undefined
+      ? Number(r.row_count)
+      : null,
+    rowKeys: jsonColumn<string[]>(r.row_keys),
+    lens: jsonColumn<McpLens>(r.lens),
+    error: r.error !== null && r.error !== undefined ? String(r.error) : null,
+  };
+}
+
+/** Newest first; key names are LEFT JOINed (null after key deletion). */
+export async function listMcpUsage(): Promise<McpUsageEntry[]> {
+  await ensureReady();
+  const rows = state().db.prepare(
+    `SELECT u.*, k.name AS key_name
+     FROM mcp_usage u LEFT JOIN mcp_keys k ON k.id = u.key_id
+     ORDER BY u.id DESC LIMIT ?`,
+  ).all(MCP_USAGE_CAP) as Record<string, unknown>[];
+  return rows.map((r) => rowToUsage(r));
 }

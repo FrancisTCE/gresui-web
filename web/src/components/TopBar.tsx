@@ -17,6 +17,7 @@ import { useState } from "react";
 import { useAppStore } from "@/AppStore.tsx";
 import { useMcpStore } from "@/McpStore.tsx";
 import { ServerStateDot } from "@/components/mcp/McpShared.tsx";
+import { ActivityPulse } from "@/components/mcp/ActivityFeed.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import {
   Dialog,
@@ -168,6 +169,7 @@ export function TopBar({
               {server?.enabled ? (
                 <ServerStateDot enabled className="ml-0.5" />
               ) : null}
+              <ActivityPulse />
             </Button>
           </TooltipTrigger>
           <TooltipContent>

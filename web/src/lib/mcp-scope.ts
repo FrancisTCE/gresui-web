@@ -6,7 +6,7 @@
 // unrelated to a relation addressed the other — see backend/mcp.ts, which
 // canonicalizes the same way before it allows a call.
 
-import type { McpKeyInfo } from "../../../shared/types.ts";
+import type { McpKeyInfo, McpLens } from "../../../shared/types.ts";
 
 /** A relation as the UI addresses it. */
 export interface TableRef {
@@ -69,4 +69,25 @@ export function withTable(
 ): string[] {
   if (keyCoverage(key, target, anchorDb) !== null) return key.tables;
   return [...key.tables, tableEntry(target, anchorDb)];
+}
+
+/** The key's lens on one relation, or null when it sees the whole row.
+ * Lens table refs are stored the same two ways an allowlist entry is, so they
+ * are compared the same way. */
+export function lensFor(
+  key: McpKeyInfo,
+  target: TableRef,
+  anchorDb: string,
+): McpLens | null {
+  const want = canonicalTable(qualifiedTable(target), anchorDb);
+  return (
+    key.lenses.find((l) => canonicalTable(l.table, anchorDb) === want) ?? null
+  );
+}
+
+/** True when the lens actually restricts something. The backend stores an
+ * empty lens as no lens at all, but a half-filled editor can produce one. */
+export function lensRestricts(lens: McpLens | null): boolean {
+  if (!lens) return false;
+  return lens.hiddenColumns.length > 0 || lens.rowFilter.trim() !== "";
 }
