@@ -64,7 +64,7 @@ export const MCP_TOOLS: McpTool[] = [
       const sess = await ctx.getSession(db);
       const rels = await meta.listRelations(sess, schema);
       return rels.filter((r) =>
-        !key.tables.length || key.tables.includes(qualify(db, schema, r.name))
+        allows(key, ctx, db, schema, r.name)
       );
     },
   },
@@ -81,7 +81,7 @@ export const MCP_TOOLS: McpTool[] = [
     run: async (args, ctx, key) => {
       const db = args.db !== undefined ? String(args.db) : undefined;
       const sess = await ctx.getSession(db);
-      checkTable(key, db, String(args.schema), String(args.table));
+      checkTable(key, ctx, db, String(args.schema), String(args.table));
       return await meta.getTableInfo(
         sess,
         String(args.schema),
@@ -108,7 +108,7 @@ export const MCP_TOOLS: McpTool[] = [
     run: async (args, ctx, key) => {
       const db = args.db !== undefined ? String(args.db) : undefined;
       const sess = await ctx.getSession(db);
-      checkTable(key, db, String(args.schema), String(args.table));
+      checkTable(key, ctx, db, String(args.schema), String(args.table));
       const offset = Number(args.offset ?? 0);
       const res = await data.browse(sess, {
         schema: String(args.schema),
@@ -137,7 +137,7 @@ export const MCP_TOOLS: McpTool[] = [
     run: async (args, ctx, key) => {
       const db = args.db !== undefined ? String(args.db) : undefined;
       const sess = await ctx.getSession(db);
-      checkTable(key, db, String(args.schema), String(args.table));
+      checkTable(key, ctx, db, String(args.schema), String(args.table));
       const res = await data.browse(sess, {
         schema: String(args.schema),
         table: String(args.table),
@@ -155,7 +155,7 @@ export const MCP_TOOLS: McpTool[] = [
     run: async (args, ctx, key) => {
       const db = args.db !== undefined ? String(args.db) : undefined;
       const sess = await ctx.getSession(db);
-      checkTable(key, db, String(args.schema), String(args.table));
+      checkTable(key, ctx, db, String(args.schema), String(args.table));
       return await meta.listIndexes(
         sess,
         String(args.schema),
@@ -220,10 +220,37 @@ function qualify(db: string | undefined, schema: string, table: string): string 
   return db ? `${db}.${schema}.${table}` : `${schema}.${table}`;
 }
 
-function checkTable(key: McpKeyInfo, db: string | undefined, schema: string, table: string): void {
-  const q = qualify(db, schema, table);
-  if (key.tables.length > 0 && !key.tables.includes(q)) {
-    throw new Error(`table not allowed for this API key: ${q}`);
+/** "db.schema.table" — the single form both sides are compared in. An entry
+ * written "public.users" and a call that passes db: "<anchor>" name the same
+ * relation, so neither side may be matched as it happens to be spelled. */
+function canonical(ref: string, anchorDb: string): string {
+  return ref.split(".").length === 2 ? `${anchorDb}.${ref}` : ref;
+}
+
+function allows(
+  key: McpKeyInfo,
+  ctx: Ctx,
+  db: string | undefined,
+  schema: string,
+  table: string,
+): boolean {
+  if (key.tables.length === 0) return true; // no allowlist = every table
+  const anchorDb = ctx.getDatabases()[0] ?? "";
+  const want = canonical(qualify(db, schema, table), anchorDb);
+  return key.tables.some((t) => canonical(t, anchorDb) === want);
+}
+
+function checkTable(
+  key: McpKeyInfo,
+  ctx: Ctx,
+  db: string | undefined,
+  schema: string,
+  table: string,
+): void {
+  if (!allows(key, ctx, db, schema, table)) {
+    throw new Error(
+      `table not allowed for this API key: ${qualify(db, schema, table)}`,
+    );
   }
 }
 

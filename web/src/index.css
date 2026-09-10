@@ -141,6 +141,25 @@
   --animate-shimmer: shimmer 1.4s linear infinite;
 }
 
+/* ---------------------------------------------------------------------------
+   Corner radius. One scale, so a control, the card it sits in and the dialog
+   that floats above them stay in proportion — every rounded-* utility in the
+   app reads from here, and nothing hard-codes a radius of its own.
+
+   A step softer than Tailwind's defaults (each value +2px), which is what
+   keeps the chrome from reading as boxy at these small control heights.
+   Nesting rule: a container is one step above what it holds — a rounded-md
+   control inside a rounded-lg card inside a rounded-xl dialog.
+--------------------------------------------------------------------------- */
+@theme {
+  --radius-xs: 0.25rem;    /*  4px — checkboxes, tiny inline chips */
+  --radius-sm: 0.375rem;   /*  6px — menu items, table cells */
+  --radius-md: 0.5rem;     /*  8px — buttons, inputs, badges-as-tags */
+  --radius-lg: 0.625rem;   /* 10px — cards, menus, popovers, toasts */
+  --radius-xl: 0.875rem;   /* 14px — dialogs, the command palette */
+  --radius-2xl: 1.125rem;  /* 18px — hero marks on empty states */
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;

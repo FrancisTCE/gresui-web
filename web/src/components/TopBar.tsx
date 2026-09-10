@@ -5,8 +5,8 @@ import {
   Folder,
   LogOut,
   Moon,
-  Plug,
   Search,
+  Server,
   SquareTerminal,
   Sun,
   Table2,
@@ -15,6 +15,8 @@ import {
 import { useState } from "react";
 
 import { useAppStore } from "@/AppStore.tsx";
+import { useMcpStore } from "@/McpStore.tsx";
+import { ServerStateDot } from "@/components/mcp/McpShared.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import {
   Dialog,
@@ -32,11 +34,13 @@ import { isMac } from "@/lib/platform.ts";
 
 export function TopBar({
   onOpenSql,
-  onOpenMcp,
+  onOpenMcpServer,
   onOpenPalette,
 }: {
   onOpenSql(): void;
-  onOpenMcp(): void;
+  /** Connection-wide MCP. The relation-scoped one is the Table MCP tab —
+   * the top bar never opens that, or the two would be the same door. */
+  onOpenMcpServer(): void;
   onOpenPalette(): void;
 }) {
   const {
@@ -48,6 +52,7 @@ export function TopBar({
     active,
     lastActive,
   } = useAppStore();
+  const { server, keys } = useMcpStore();
   const [disconnectOpen, setDisconnectOpen] = useState(false);
 
   async function disconnect(): Promise<void> {
@@ -155,10 +160,23 @@ export function TopBar({
             {theme === "dark" ? "Light theme" : "Dark theme"}
           </TooltipContent>
         </Tooltip>
-        <Button variant="ghost" size="sm" onClick={onOpenMcp}>
-          <Plug />
-          MCP
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="sm" onClick={onOpenMcpServer}>
+              <Server />
+              MCP Server
+              {server?.enabled ? (
+                <ServerStateDot enabled className="ml-0.5" />
+              ) : null}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {server?.enabled
+              ? `Serving ${keys.length} connection${keys.length === 1 ? "" : "s"}`
+              : "MCP server is stopped"}
+            {" · this connection, all tables"}
+          </TooltipContent>
+        </Tooltip>
         <Button variant="ghost" size="sm" onClick={onOpenSql}>
           <SquareTerminal />
           SQL

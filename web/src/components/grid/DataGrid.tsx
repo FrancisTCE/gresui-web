@@ -277,7 +277,7 @@ export function DataGrid({
                   }}
                   disabled={rows.length === 0}
                   className={cn(
-                    "flex size-3.5 items-center justify-center rounded-[3px] border transition-colors",
+                    "flex size-3.5 items-center justify-center rounded-xs border transition-colors",
                     selected && selected.size > 0
                       ? "border-accent bg-accent text-accent-fg"
                       : "border-border-strong bg-background hover:border-accent",

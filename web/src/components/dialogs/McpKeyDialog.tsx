@@ -73,6 +73,11 @@ export function McpKeyDialog({
     [tools],
   );
 
+  // Depend on the *contents* of defaultTables, not the array's identity: a
+  // caller passing a literal re-seeds on every render of its parent, and the
+  // reset below would wipe the just-created key out of the success view.
+  const defaultTablesKey = (defaultTables ?? []).join(",");
+
   useEffect(() => {
     if (open) {
       setError("");
@@ -89,10 +94,10 @@ export function McpKeyDialog({
       } else {
         setName("");
         setScopes({});
-        setTablesText((defaultTables ?? []).join(", "));
+        setTablesText(defaultTablesKey.split(",").filter(Boolean).join(", "));
       }
     }
-  }, [open, mode, existing, tools, defaultTables]);
+  }, [open, mode, existing, tools, defaultTablesKey]);
 
   const scopeCount = Object.values(scopes).filter(Boolean).length;
   const valid = name.trim() !== "" && scopeCount > 0;
@@ -230,7 +235,8 @@ export function McpKeyDialog({
                     Select all
                   </Button>
                 </legend>
-                <div className="grid grid-cols-1 gap-1 rounded-md border border-border bg-raised p-2">
+                {/* The catalog grows; the dialog should not grow with it. */}
+                <div className="grid max-h-[38vh] grid-cols-1 gap-1 overflow-y-auto rounded-md border border-border bg-raised p-2">
                   {sortedTools.map((t) => (
                     <label
                       key={t.name}
