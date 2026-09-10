@@ -54,11 +54,15 @@ function decodeBase64(s: string): Uint8Array {
 type CliResult = { ok: boolean; out: string };
 
 /** Run a short CLI; 5s timeout, stdin via pipe for secrets (never argv). */
-async function runCli(cmd: string[], input?: string): Promise<CliResult> {
+async function runCli(
+  cmd: [string, ...string[]],
+  input?: string,
+): Promise<CliResult> {
   return await new Promise((resolve) => {
+    const [exe, ...argv] = cmd;
     let child;
     try {
-      child = spawn(cmd[0], cmd.slice(1), {
+      child = spawn(exe, argv, {
         stdio: input === undefined
           ? ["ignore", "pipe", "pipe"]
           : ["pipe", "pipe", "pipe"],
@@ -79,14 +83,16 @@ async function runCli(cmd: string[], input?: string): Promise<CliResult> {
       child.kill();
       finish(false);
     }, CLI_TIMEOUT_MS);
-    child.stdout.on("data", (d: Buffer) => {
+    // stdio is configured "pipe" above, so these exist — but a spawn that
+    // failed to set them up must not take the process down.
+    child.stdout?.on("data", (d: Buffer) => {
       out += d.toString();
     });
     child.on("error", () => finish(false));
     child.on("close", (code: number | null) => finish(code === 0));
     if (input !== undefined) {
-      child.stdin.write(input);
-      child.stdin.end();
+      child.stdin?.write(input);
+      child.stdin?.end();
     }
   });
 }

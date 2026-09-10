@@ -33,6 +33,16 @@ FROM ${ident(schema)}.${ident(table)}
 LIMIT 50;`;
 }
 
+/** Ask the backend to cancel the in-flight query. Closes over nothing, so it
+ * lives out here; a failure means the query already finished. */
+async function cancel(): Promise<void> {
+  try {
+    await call(getBindings().cancelQuery());
+  } catch {
+    // ignore
+  }
+}
+
 export function SqlTab({ active }: { active: boolean }) {
   const { theme, toastStore, active: target, lastActive } = useAppStore();
   const [text, setText] = useState("");
@@ -74,14 +84,6 @@ export function SqlTab({ active }: { active: boolean }) {
       setError((e as Error).message);
     } finally {
       setRunning(false);
-    }
-  }
-
-  async function cancel(): Promise<void> {
-    try {
-      await call(getBindings().cancelQuery());
-    } catch {
-      // ignore
     }
   }
 
@@ -272,6 +274,9 @@ export function SqlTab({ active }: { active: boolean }) {
             ) : (
               history.map((h, i) => (
                 <button
+                  // Query history has no id; a timestamp can repeat within a
+                  // millisecond, so position is part of the identity.
+                  // oxlint-disable-next-line react/no-array-index-key
                   key={`${h.ts}-${i}`}
                   type="button"
                   onClick={() => {

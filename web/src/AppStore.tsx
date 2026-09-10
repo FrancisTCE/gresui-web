@@ -1,6 +1,7 @@
 // App-wide state: settings, connection status, active table target, theme.
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -91,14 +92,14 @@ export function AppStoreProvider({
   const [lastActive, setLastActive] = useState<ActiveTarget | null>(null);
   const [viewStatus, setViewStatus] = useState<ViewStatus>({});
 
-  function setActive(a: ActiveTarget | null): void {
+  const setActive = useCallback((a: ActiveTarget | null): void => {
     if (a) setLastActive(a);
     setActiveRaw(a);
-  }
+  }, []);
 
-  function goHome(): void {
+  const goHome = useCallback((): void => {
     setActiveRaw(null);
-  }
+  }, []);
 
   useEffect(() => {
     applyTheme(curSettings.theme);
@@ -127,7 +128,16 @@ export function AppStoreProvider({
         }
       },
     }),
-    [curSettings, connStatus, active, lastActive, toastStore, viewStatus],
+    [
+      curSettings,
+      connStatus,
+      active,
+      lastActive,
+      toastStore,
+      viewStatus,
+      setActive,
+      goHome,
+    ],
   );
 
   return (

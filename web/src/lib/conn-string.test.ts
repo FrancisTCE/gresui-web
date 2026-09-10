@@ -20,7 +20,7 @@ function warnings(s: string): string[] {
   return parseConnectionString(s).warnings;
 }
 
-const BACKSLASH = String.fromCharCode(92);
+const BACKSLASH = String.fromCodePoint(92);
 
 describe("URI form", () => {
   test("full URI", () => {

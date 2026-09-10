@@ -84,7 +84,7 @@ function applySslMode(
 /** A libpq host list ("a:5432,b:5433") — this app connects to one server. */
 function firstHost(host: string, warnings: string[]): string {
   if (!host.includes(",")) return host;
-  const [first] = host.split(",");
+  const [first = host] = host.split(",");
   warnings.push(
     "Multiple hosts given; using the first. Failover lists are not supported.",
   );
@@ -120,7 +120,7 @@ function parseUri(text: string): ParseResult {
   } catch {
     // URL() reports an out-of-range port as a plain parse failure; dig the
     // port out of the authority so the message names the real problem.
-    const authority = text.slice(text.indexOf("//") + 2).split(/[/?#]/)[0];
+    const authority = text.slice(text.indexOf("//") + 2).split(/[/?#]/)[0] ?? "";
     const portMatch = authority.match(/:(\d+)$/);
     if (portMatch && Number(portMatch[1]) > 65535) {
       return { ok: false, error: `Invalid port "${portMatch[1]}".`, warnings };
@@ -198,46 +198,49 @@ function splitDsn(text: string): { pairs: [string, string][]; error?: string } {
   const pairs: [string, string][] = [];
   let i = 0;
   const n = text.length;
+  /** The character at `j`; "" past the end. Every call site is already
+   * inside `i < n`, so this only satisfies the type, never the logic. */
+  const at = (j: number): string => text[j] ?? "";
   while (i < n) {
-    while (i < n && /\s/.test(text[i])) i++;
+    while (i < n && /\s/.test(at(i))) i++;
     if (i >= n) break;
 
     const keyStart = i;
-    while (i < n && text[i] !== "=" && !/\s/.test(text[i])) i++;
+    while (i < n && at(i) !== "=" && !/\s/.test(at(i))) i++;
     const key = text.slice(keyStart, i);
-    while (i < n && /\s/.test(text[i])) i++;
-    if (i >= n || text[i] !== "=") {
+    while (i < n && /\s/.test(at(i))) i++;
+    if (i >= n || at(i) !== "=") {
       return { pairs, error: `Expected "=" after "${key}".` };
     }
     i++; // consume "="
-    while (i < n && /\s/.test(text[i])) i++;
+    while (i < n && /\s/.test(at(i))) i++;
 
     let value = "";
-    if (i < n && text[i] === "'") {
+    if (i < n && at(i) === "'") {
       i++;
       let closed = false;
       while (i < n) {
-        if (text[i] === "\\" && i + 1 < n) {
-          value += text[i + 1];
+        if (at(i) === "\\" && i + 1 < n) {
+          value += at(i + 1);
           i += 2;
           continue;
         }
-        if (text[i] === "'") {
+        if (at(i) === "'") {
           i++;
           closed = true;
           break;
         }
-        value += text[i++];
+        value += at(i++);
       }
       if (!closed) return { pairs, error: `Unterminated quote in "${key}".` };
     } else {
-      while (i < n && !/\s/.test(text[i])) {
-        if (text[i] === "\\" && i + 1 < n) {
-          value += text[i + 1];
+      while (i < n && !/\s/.test(at(i))) {
+        if (at(i) === "\\" && i + 1 < n) {
+          value += at(i + 1);
           i += 2;
           continue;
         }
-        value += text[i++];
+        value += at(i++);
       }
     }
     pairs.push([key.toLowerCase(), value]);

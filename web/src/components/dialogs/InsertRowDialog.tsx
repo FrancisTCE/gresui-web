@@ -48,7 +48,7 @@ export function InsertRowDialog({
   }, [open, columns]);
 
   const byOrdinal = useMemo(
-    () => [...columns].sort((a, b) => a.ordinal - b.ordinal),
+    () => columns.toSorted((a, b) => a.ordinal - b.ordinal),
     [columns],
   );
 

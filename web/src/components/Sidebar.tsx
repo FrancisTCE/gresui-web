@@ -76,7 +76,7 @@ export function Sidebar({
         const schemas = await call(b.listSchemas(key));
         children = schemas.map((name) => ({ kind: "schema", name }));
       } else {
-        const [db, schema] = key.split(":");
+        const [db = "", schema = ""] = key.split(":");
         const rels = await call(b.listRelations(db, schema));
         children = rels.map((r) => ({
           kind: "relation",
@@ -117,6 +117,9 @@ export function Sidebar({
   useEffect(() => {
     if (refreshToken === firstToken.current) return;
     void refresh();
+    // `refresh` is redeclared every render; depending on it would re-query the
+    // whole catalog on each one. The token is the trigger.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshToken]);
 
   async function refresh(): Promise<void> {
@@ -213,7 +216,7 @@ export function Sidebar({
       const isOpen = expanded.has(childKey) || hits.has(childKey);
 
       if (node.kind === "relation") {
-        const [db, schema] = key.split(":");
+        const [db = "", schema = ""] = key.split(":");
         const isActive = active?.database === db &&
           active?.schema === schema &&
           active?.table === node.name;
@@ -351,9 +354,9 @@ export function Sidebar({
 
 /** Marks the matched span so a search hit stands out in a long list. */
 function Highlight({ text, match }: { text: string; match: string }) {
-  if (!match) return <>{text}</>;
+  if (!match) return text;
   const i = text.toLowerCase().indexOf(match);
-  if (i === -1) return <>{text}</>;
+  if (i === -1) return text;
   return (
     <>
       {text.slice(0, i)}

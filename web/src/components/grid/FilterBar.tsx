@@ -44,7 +44,7 @@ interface Suggestions {
 }
 
 function escapeRe(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return s.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /** Index after the last ` AND `/` OR ` (case-insensitive) ending at or before caret. */
@@ -77,8 +77,9 @@ function computeSuggestions(
 
   // Branch B — exact column name → its type's operators.
   const colMatch = token.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*$/);
-  if (colMatch) {
-    const col = columns.find((c) => c.name.toLowerCase() === colMatch[1].toLowerCase());
+  const colName = colMatch?.[1];
+  if (colName !== undefined) {
+    const col = columns.find((c) => c.name.toLowerCase() === colName.toLowerCase());
     if (col) {
       const ops = opsForType(col.type);
       // Insert after the column token — replacing it would drop the column.
@@ -95,7 +96,7 @@ function computeSuggestions(
       candidates = columns.filter((c) => c.name.toLowerCase().includes(match));
     }
   }
-  const sorted = [...candidates].sort((a, b) => a.ordinal - b.ordinal);
+  const sorted = candidates.toSorted((a, b) => a.ordinal - b.ordinal);
   if (sorted.length === 0) return null;
   return {
     items: sorted.map((c) => c.name),
@@ -148,6 +149,8 @@ export function FilterBar({
   // Table switch/refresh: never show suggestions from a previous column set.
   useEffect(() => {
     setSuggestions(null);
+    // `columns` is the trigger, not something the body reads.
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies
   }, [columns]);
 
   // Restore caret after accepting a suggestion (controlled input resets it).
@@ -223,7 +226,10 @@ export function FilterBar({
                   setHighlight((h) => (h - 1 + n) % n);
                 } else if (e.key === "Enter" || e.key === "Tab") {
                   e.preventDefault();
-                  accept(suggestions.items[highlight]);
+                  {
+                    const pick = suggestions.items[highlight];
+                    if (pick !== undefined) accept(pick);
+                  }
                 } else if (e.key === "Escape") {
                   e.preventDefault();
                   setSuggestions(null);

@@ -17,7 +17,9 @@ function csvField(v: CellValue): string {
 /** CSV: UTF-8 BOM, CRLF, header row, every field quoted, quotes doubled. */
 export function toCsv(columns: { name: string; type: string }[], rows: Row[]): string {
   const header = columns.map((c) => `"${c.name.replaceAll('"', '""')}"`).join(",");
-  return "\uFEFF" + [header, ...rows.map((r) => r.map(csvField).join(","))].join("\r\n") + "\r\n";
+  return "\uFEFF" +
+    [header, ...rows.map((r) => r.map((v) => csvField(v)).join(","))].join("\r\n") +
+    "\r\n";
 }
 
 /** JSON: compact array of column-keyed objects; null stays null. */
@@ -34,7 +36,7 @@ export function toJson(columns: { name: string; type: string }[], rows: Row[]): 
 
 /** Keep filenames sane: anything outside [A-Za-z0-9._-] becomes "_". */
 export function sanitizeFileName(name: string): string {
-  return name.replace(/[^A-Za-z0-9._-]+/g, "_");
+  return name.replaceAll(/[^A-Za-z0-9._-]+/g, "_");
 }
 
 /** Build the file and trigger a browser download. */

@@ -39,6 +39,9 @@ export function InfoTab() {
     } finally {
       setLoading(false);
     }
+    // `tick` is not read here — bumping it is how a manual refresh rebuilds
+    // this callback, which re-runs the effect below.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps, react/memo-dependencies
   }, [active, tick]);
 
   useEffect(() => {
