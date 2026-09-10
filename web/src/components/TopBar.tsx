@@ -15,7 +15,7 @@ import {
 import { useState } from "react";
 
 import { useAppStore } from "@/AppStore.tsx";
-import { useMcpStore } from "@/McpStore.tsx";
+import { ActivityPulse } from "@/components/mcp/ActivityFeed.tsx";
 import { ServerStateDot } from "@/components/mcp/McpShared.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import {
@@ -28,9 +28,14 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog.tsx";
 import { Kbd } from "@/components/ui/kbd.tsx";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.tsx";
-import { call, getBindings } from "@/lib/rpc.ts";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip.tsx";
 import { isMac } from "@/lib/platform.ts";
+import { call, getBindings } from "@/lib/rpc.ts";
+import { useMcpStore } from "@/McpStore.tsx";
 
 export function TopBar({
   onOpenSql,
@@ -81,39 +86,39 @@ export function TopBar({
         </span>
       </div>
 
-      {crumbs
-        ? (
-          <>
-            <div className="h-4 w-px shrink-0 bg-border" />
-            {/* Whole breadcrumb is one control: while the table view is empty
+      {crumbs ? (
+        <>
+          <div className="h-4 w-px shrink-0 bg-border" />
+          {/* Whole breadcrumb is one control: while the table view is empty
                 it walks back to the relation that was last open. */}
-            <button
-              type="button"
-              onClick={() => stale && setActive(lastActive)}
-              disabled={!stale}
-              title={stale
+          <button
+            type="button"
+            onClick={() => stale && setActive(lastActive)}
+            disabled={!stale}
+            title={
+              stale
                 ? `Back to ${crumbs.schema}.${crumbs.table}`
-                : `${crumbs.database} / ${crumbs.schema} / ${crumbs.table}`}
-              className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs transition-colors enabled:hover:bg-surface disabled:cursor-default"
-            >
-              <Database className="size-3 shrink-0 text-subtle" />
-              <span className="max-w-[9rem] truncate text-muted">
-                {crumbs.database}
-              </span>
-              <ChevronRight className="size-3 shrink-0 text-subtle" />
-              <Folder className="size-3 shrink-0 text-subtle" />
-              <span className="max-w-[9rem] truncate text-muted">
-                {crumbs.schema}
-              </span>
-              <ChevronRight className="size-3 shrink-0 text-subtle" />
-              <RelIcon className="size-3 shrink-0 text-accent-text" />
-              <span className="max-w-[14rem] truncate font-medium text-foreground">
-                {crumbs.table}
-              </span>
-            </button>
-          </>
-        )
-        : null}
+                : `${crumbs.database} / ${crumbs.schema} / ${crumbs.table}`
+            }
+            className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs transition-colors enabled:hover:bg-surface disabled:cursor-default"
+          >
+            <Database className="size-3 shrink-0 text-subtle" />
+            <span className="max-w-[9rem] truncate text-muted">
+              {crumbs.database}
+            </span>
+            <ChevronRight className="size-3 shrink-0 text-subtle" />
+            <Folder className="size-3 shrink-0 text-subtle" />
+            <span className="max-w-[9rem] truncate text-muted">
+              {crumbs.schema}
+            </span>
+            <ChevronRight className="size-3 shrink-0 text-subtle" />
+            <RelIcon className="size-3 shrink-0 text-accent-text" />
+            <span className="max-w-[14rem] truncate font-medium text-foreground">
+              {crumbs.table}
+            </span>
+          </button>
+        </>
+      ) : null}
 
       {/* Centred independently of the breadcrumb, which changes width as the
           user moves between relations. */}
@@ -168,6 +173,7 @@ export function TopBar({
               {server?.enabled ? (
                 <ServerStateDot enabled className="ml-0.5" />
               ) : null}
+              <ActivityPulse />
             </Button>
           </TooltipTrigger>
           <TooltipContent>
@@ -209,7 +215,10 @@ export function TopBar({
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button variant="secondary" onClick={() => setDisconnectOpen(false)}>
+              <Button
+                variant="secondary"
+                onClick={() => setDisconnectOpen(false)}
+              >
                 Cancel
               </Button>
               <Button variant="destructive" onClick={disconnect}>

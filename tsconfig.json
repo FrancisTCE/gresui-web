@@ -1,0 +1,40 @@
+{
+  // Typecheck only — nothing here emits. Vite (esbuild) builds the frontend and
+  // scripts/build-server.mjs bundles the backend; both strip types without
+  // consulting this file, so it exists purely to make `npm run check` able to
+  // fail. Keep it strict: it is the only thing that reads the type annotations.
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+
+    "jsx": "react-jsx",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitReturns": true,
+    "useUnknownInCatchVariables": true,
+    "forceConsistentCasingInFileNames": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["web/src/*"]
+    }
+  },
+  "include": ["backend/**/*.ts", "shared/**/*.ts", "web/src/**/*.ts", "web/src/**/*.tsx", "vite.config.ts"]
+}

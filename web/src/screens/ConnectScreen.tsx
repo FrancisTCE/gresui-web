@@ -1,10 +1,27 @@
 // Connect screen: saved-connections sidebar + full-width connection form.
-import { Database, Eye, EyeOff, Moon, Plug, Plus, Search, Sun, Trash2 } from "lucide-react";
+import {
+  Database,
+  Eye,
+  EyeOff,
+  Moon,
+  Plug,
+  Plus,
+  Search,
+  Sun,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-
-import type { ConnectionConfig, ConnStatus } from "../../../shared/types.ts";
 import { useAppStore } from "@/AppStore.tsx";
+import { ConnectionStringField } from "@/components/ConnectionStringField.tsx";
+import { ErrorBanner } from "@/components/ErrorBanner.tsx";
 import { Button } from "@/components/ui/button.tsx";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu.tsx";
 import {
   Dialog,
   DialogContent,
@@ -13,13 +30,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog.tsx";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Label } from "@/components/ui/label.tsx";
 import {
@@ -29,15 +39,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select.tsx";
-import { ConnectionStringField } from "@/components/ConnectionStringField.tsx";
-import { ErrorBanner } from "@/components/ErrorBanner.tsx";
 import {
   looksLikeConnectionString,
-  parseConnectionString,
   type ParsedConnection,
+  parseConnectionString,
 } from "@/lib/conn-string.ts";
 import { formatRelativeDate } from "@/lib/format.ts";
 import { call, getBindings } from "@/lib/rpc.ts";
+import { ignoreError } from "../../../shared/noop.ts";
+import type { ConnectionConfig, ConnStatus } from "../../../shared/types.ts";
 
 const SSL_OPTIONS: { value: ConnectionConfig["ssl"]; label: string }[] = [
   { value: "disable", label: "Disable" },
@@ -73,7 +83,13 @@ function Wordmark() {
   );
 }
 
-function ThemeToggle({ theme, setTheme }: { theme: "dark" | "light"; setTheme(t: "dark" | "light"): void }) {
+function ThemeToggle({
+  theme,
+  setTheme,
+}: {
+  theme: "dark" | "light";
+  setTheme(t: "dark" | "light"): void;
+}) {
   return (
     <Button
       variant="ghost"
@@ -81,7 +97,11 @@ function ThemeToggle({ theme, setTheme }: { theme: "dark" | "light"; setTheme(t:
       onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
       aria-label="Toggle theme"
     >
-      {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+      {theme === "dark" ? (
+        <Sun className="size-4" />
+      ) : (
+        <Moon className="size-4" />
+      )}
     </Button>
   );
 }
@@ -96,7 +116,9 @@ export function ConnectScreen() {
   const [error, setError] = useState<string>("");
   const [portError, setPortError] = useState("");
   const [search, setSearch] = useState("");
-  const [pendingDelete, setPendingDelete] = useState<ConnectionConfig | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<ConnectionConfig | null>(
+    null,
+  );
   const [probeDbs, setProbeDbs] = useState<string[] | null>(null);
   const [probing, setProbing] = useState(false);
   const [dbInput, setDbInput] = useState("");
@@ -114,12 +136,13 @@ export function ConnectScreen() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return connections;
-    return connections.filter((c) =>
-      c.name.toLowerCase().includes(q) ||
-      c.host.toLowerCase().includes(q) ||
-      String(c.port).includes(q) ||
-      c.database.toLowerCase().includes(q) ||
-      c.user.toLowerCase().includes(q)
+    return connections.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.host.toLowerCase().includes(q) ||
+        String(c.port).includes(q) ||
+        c.database.toLowerCase().includes(q) ||
+        c.user.toLowerCase().includes(q),
     );
   }, [connections, search]);
 
@@ -266,9 +289,14 @@ export function ConnectScreen() {
     try {
       const status: ConnStatus = await call(getBindings().connect(c));
       await call(
-        getBindings().saveConnection({ ...c, lastUsed: new Date().toISOString() }),
-      ).catch(() => {});
-      setConnections(await call(getBindings().listConnections()).catch(() => connections));
+        getBindings().saveConnection({
+          ...c,
+          lastUsed: new Date().toISOString(),
+        }),
+      ).catch(ignoreError);
+      setConnections(
+        await call(getBindings().listConnections()).catch(() => connections),
+      );
       setConnStatus(status);
       toastStore.toast({
         title: "Connected",
@@ -342,7 +370,9 @@ export function ConnectScreen() {
           <div className="flex-1 overflow-y-auto p-2">
             {filtered.length === 0 ? (
               <p className="px-2 py-4 text-center text-xs text-muted">
-                {search ? "No matching connections." : "No saved connections yet."}
+                {search
+                  ? "No matching connections."
+                  : "No saved connections yet."}
               </p>
             ) : (
               filtered.map((c) => (
@@ -458,7 +488,9 @@ export function ConnectScreen() {
             <DialogTitle>Delete connection?</DialogTitle>
             <DialogDescription>
               Remove{" "}
-              <span className="font-medium text-foreground">{pendingDelete?.name}</span>{" "}
+              <span className="font-medium text-foreground">
+                {pendingDelete?.name}
+              </span>{" "}
               from your saved connections?
             </DialogDescription>
           </DialogHeader>
@@ -495,7 +527,8 @@ export function ConnectScreen() {
           }}
           onApply={applyParsed}
           onCopyFailed={(message) =>
-            toastStore.toast({ title: "Copy failed", description: message })}
+            toastStore.toast({ title: "Copy failed", description: message })
+          }
         />
 
         <div className="flex items-center gap-3">
@@ -532,7 +565,9 @@ export function ConnectScreen() {
               value={form.port}
               min={1}
               max={65535}
-              onChange={(e) => setForm({ ...form, port: Number(e.target.value) })}
+              onChange={(e) =>
+                setForm({ ...form, port: Number(e.target.value) })
+              }
             />
             {portError ? (
               <span className="text-xs text-danger">{portError}</span>
@@ -564,7 +599,11 @@ export function ConnectScreen() {
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
                 aria-label={showPassword ? "Hide password" : "Show password"}
               >
-                {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                {showPassword ? (
+                  <EyeOff className="size-4" />
+                ) : (
+                  <Eye className="size-4" />
+                )}
               </button>
             </div>
           </div>
@@ -602,7 +641,11 @@ export function ConnectScreen() {
                     type="button"
                     variant="ghost"
                     size="sm"
-                    disabled={probeDbs.every((d) => d === form.database.trim() || form.databases.includes(d))}
+                    disabled={probeDbs.every(
+                      (d) =>
+                        d === form.database.trim() ||
+                        form.databases.includes(d),
+                    )}
                     onClick={() => {
                       const anchor = form.database.trim();
                       const next = probeDbs.filter((d) => d !== anchor);
@@ -614,38 +657,40 @@ export function ConnectScreen() {
                   </Button>
                 </div>
                 <div className="max-h-40 overflow-y-auto bg-raised p-2">
-                {probeDbs.map((name) => {
-                  const anchor = name === form.database.trim();
-                  const checked = anchor || form.databases.includes(name);
-                  return (
-                    <label
-                      key={name}
-                      className="flex cursor-pointer items-start gap-2 rounded px-1.5 py-1 hover:bg-surface"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        disabled={anchor}
-                        onChange={(e) => {
-                          const next = e.target.checked
-                            ? [...form.databases, name]
-                            : form.databases.filter((d) => d !== name);
-                          setForm({ ...form, databases: next });
-                          setDbInput(next.join(", "));
-                        }}
-                        className="mt-0.5 size-4 accent-[var(--accent)]"
-                      />
-                      <span className="min-w-0">
-                        <span className="block font-mono text-xs font-medium text-foreground">
-                          {name}
+                  {probeDbs.map((name) => {
+                    const anchor = name === form.database.trim();
+                    const checked = anchor || form.databases.includes(name);
+                    return (
+                      <label
+                        key={name}
+                        className="flex cursor-pointer items-start gap-2 rounded px-1.5 py-1 hover:bg-surface"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={anchor}
+                          onChange={(e) => {
+                            const next = e.target.checked
+                              ? [...form.databases, name]
+                              : form.databases.filter((d) => d !== name);
+                            setForm({ ...form, databases: next });
+                            setDbInput(next.join(", "));
+                          }}
+                          className="mt-0.5 size-4 accent-[var(--accent)]"
+                        />
+                        <span className="min-w-0">
+                          <span className="block font-mono text-xs font-medium text-foreground">
+                            {name}
+                          </span>
+                          {anchor ? (
+                            <span className="block text-[11px] text-muted">
+                              (anchor)
+                            </span>
+                          ) : null}
                         </span>
-                        {anchor ? (
-                          <span className="block text-[11px] text-muted">(anchor)</span>
-                        ) : null}
-                      </span>
-                    </label>
-                  );
-                })}
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
             ) : null}

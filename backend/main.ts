@@ -10,19 +10,20 @@ import {
   readFileSync,
   writeSync,
 } from "node:fs";
-import { normalize } from "node:path";
-import path from "node:path";
+import path, { normalize } from "node:path";
 import { fileURLToPath } from "node:url";
-
+import { ignoreError } from "../shared/noop.ts";
 import type { Bindings } from "../shared/rpc.ts";
 import type {
   CellValue,
   ConnectionConfig,
   ConnStatus,
+  McpKeyInfo,
   Settings,
 } from "../shared/types.ts";
 import * as config from "./config.ts";
 import * as data from "./data.ts";
+import * as events from "./events.ts";
 import { serve } from "./http.ts";
 import * as mcp from "./mcp.ts";
 import * as meta from "./meta.ts";
@@ -39,8 +40,13 @@ const DIST = path.join(ROOT, "dist");
 // Tee console output to gresui.log (cwd, falling back to the config dir).
 let logPath: string | null = null;
 
+const logStamp = (): string => new Date().toISOString();
+
 function setupLogging(): void {
-  const candidates = [`${process.cwd()}/gresui.log`, `${config.configDir()}/gresui.log`];
+  const candidates = [
+    `${process.cwd()}/gresui.log`,
+    `${config.configDir()}/gresui.log`,
+  ];
   for (const p of candidates) {
     try {
       openSync(p, "a");
@@ -56,13 +62,15 @@ function setupLogging(): void {
     }
   }
   if (!logPath) return;
-  const ts = () => new Date().toISOString();
+  // Pinned: `logPath` is module-level and mutable, so the closure below has
+  // to hold the value the guard just proved non-null.
+  const dest = logPath;
   const write = (level: string, args: unknown[]): void => {
-    const line = `[${ts()}] ${level} ${args.map((a) =>
-      typeof a === "string" ? a : JSON.stringify(a)
-    ).join(" ")}\n`;
+    const line = `[${logStamp()}] ${level} ${args
+      .map((a) => (typeof a === "string" ? a : JSON.stringify(a)))
+      .join(" ")}\n`;
     try {
-      const fd = openSync(logPath, "a");
+      const fd = openSync(dest, "a");
       try {
         writeSync(fd, line);
       } finally {
@@ -73,9 +81,18 @@ function setupLogging(): void {
     }
   };
   const orig = { log: console.log, error: console.error, warn: console.warn };
-  console.log = (...a) => (write("LOG", a), orig.log(...a));
-  console.error = (...a) => (write("ERR", a), orig.error(...a));
-  console.warn = (...a) => (write("WARN", a), orig.warn(...a));
+  console.log = (...a) => {
+    write("LOG", a);
+    orig.log(...a);
+  };
+  console.error = (...a) => {
+    write("ERR", a);
+    orig.error(...a);
+  };
+  console.warn = (...a) => {
+    write("WARN", a);
+    orig.warn(...a);
+  };
   console.log("gresui backend logging initialized");
 }
 
@@ -151,7 +168,58 @@ const RPC_TOKEN = crypto.randomUUID();
 function handleRequest(req: Request): Response | Promise<Response> {
   const u = new URL(req.url);
   if (req.method === "POST" && u.pathname === "/rpc") return handleRpc(req);
+  if (req.method === "GET" && u.pathname === "/events")
+    return handleEvents(req);
   return serveStatic(req);
+}
+
+/** Server-sent events: MCP tool calls as they happen.
+ *
+ * Authenticated with the same header token as /rpc, which is why the client
+ * reads this with fetch() rather than EventSource — EventSource cannot set
+ * headers, and the alternative is putting the token in a URL. */
+function handleEvents(req: Request): Response {
+  if (req.headers.get("x-gresui-token") !== RPC_TOKEN) {
+    return rpcError(401, "Unauthorized", "invalid token");
+  }
+  const enc = new TextEncoder();
+  const sub: {
+    off?: () => void;
+    heartbeat?: ReturnType<typeof setInterval>;
+  } = {};
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const send = (frame: string): void => {
+        try {
+          controller.enqueue(enc.encode(frame));
+        } catch {
+          // Stream already closed by the other side; cancel() cleans up.
+        }
+      };
+      // Flush headers through any buffering proxy and tell the client the
+      // stream is live before the first real event.
+      send(": open\n\n");
+      sub.off = events.subscribe((e) => {
+        send(`event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`);
+      });
+      // A comment frame keeps idle connections from being reaped, and gives
+      // the client a way to notice a dead socket.
+      sub.heartbeat = setInterval(() => send(": ping\n\n"), 25_000);
+    },
+    cancel() {
+      sub.off?.();
+      if (sub.heartbeat) clearInterval(sub.heartbeat);
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+    },
+  });
 }
 
 // --- session state ----------------------------------------------------------
@@ -163,7 +231,7 @@ function primary(): PgSession {
   return pool.getPrimary();
 }
 
-async function sessFor(db: string): Promise<PgSession> {
+function sessFor(db: string): Promise<PgSession> {
   if (!pool) throw new Error("Not connected");
   return pool.get(db);
 }
@@ -200,9 +268,9 @@ function statusOf(s: PgSession): ConnStatus {
 // with the connection credentials), so the configured-database allowlist is
 // enforced here — never reach pool.get with an unlisted name.
 const mcpCtx: mcp.Ctx = {
-  getSession: async (db?: string) => {
+  getSession: (db?: string) => {
     if (!pool) throw new Error("Not connected");
-    if (db === undefined) return pool.getPrimary();
+    if (db === undefined) return Promise.resolve(pool.getPrimary());
     if (!pool.databases().includes(db)) {
       throw new Error(`database not in this connection: ${db}`);
     }
@@ -226,7 +294,7 @@ const bindings: Bindings = {
   deleteConnection: (id: string) => config.deleteConnection(id),
 
   connect: async (c: ConnectionConfig): Promise<ConnStatus> => {
-    if (pool) await pool.close().catch(() => {});
+    if (pool) await pool.close().catch(ignoreError);
     pool = null;
     const p = new PgPool(c);
     await p.get(p.databases()[0]); // probe + cache the anchor so getPrimary() works
@@ -236,7 +304,7 @@ const bindings: Bindings = {
 
   disconnect: async (): Promise<void> => {
     if (pool) {
-      await pool.close().catch(() => {});
+      await pool.close().catch(ignoreError);
       pool = null;
     }
   },
@@ -255,7 +323,7 @@ const bindings: Bindings = {
       await s.connect();
       return await meta.listDatabases(s); // already excludes templates/non-connectable
     } finally {
-      await s.close().catch(() => {});
+      await s.close().catch(ignoreError);
     }
   },
 
@@ -275,7 +343,8 @@ const bindings: Bindings = {
 
   browse: async (db: string, req) => data.browse(await sessFor(db), req),
 
-  exportTable: async (db: string, req) => data.exportTable(await sessFor(db), req),
+  exportTable: async (db: string, req) =>
+    data.exportTable(await sessFor(db), req),
 
   insertRow: async (
     db: string,
@@ -291,7 +360,15 @@ const bindings: Bindings = {
     pkColumns: string[],
     pkValues: CellValue[],
     changes: Record<string, CellValue>,
-  ) => data.updateRow(await sessFor(db), schema, table, pkColumns, pkValues, changes),
+  ) =>
+    data.updateRow(
+      await sessFor(db),
+      schema,
+      table,
+      pkColumns,
+      pkValues,
+      changes,
+    ),
 
   deleteRows: async (
     db: string,
@@ -326,7 +403,9 @@ const bindings: Bindings = {
   },
 
   listMcpTools: () =>
-    Promise.resolve(mcp.MCP_TOOLS.map(({ name, description }) => ({ name, description }))),
+    Promise.resolve(
+      mcp.MCP_TOOLS.map(({ name, description }) => ({ name, description })),
+    ),
 
   listMcpKeys: () => config.listMcpKeys(),
 
@@ -343,7 +422,26 @@ const bindings: Bindings = {
   },
 
   deleteMcpKey: (id) => config.deleteMcpKey(id),
+
+  setMcpLens: async (keyId, lens) => {
+    mcp.validateMcpLens(lens);
+    await config.setMcpLens(keyId, lens);
+    return keyById(keyId);
+  },
+
+  clearMcpLens: async (keyId, table) => {
+    await config.clearMcpLens(keyId, table);
+    return keyById(keyId);
+  },
 };
+
+/** Re-read one key after a lens change, so the caller gets the same shape
+ * listMcpKeys hands out rather than having to refetch the whole list. */
+async function keyById(id: string): Promise<McpKeyInfo> {
+  const found = (await config.listMcpKeys()).find((k) => k.id === id);
+  if (!found) throw new Error(`no such API key: ${id}`);
+  return found;
+}
 
 // --- HTTP RPC ---------------------------------------------------------------
 
@@ -368,7 +466,10 @@ async function handleRpc(req: Request): Promise<Response> {
   const origin = req.headers.get("origin");
   if (origin) {
     const port = PORT;
-    if (origin !== `http://127.0.0.1:${port}` && origin !== `http://localhost:${port}`) {
+    if (
+      origin !== `http://127.0.0.1:${port}` &&
+      origin !== `http://localhost:${port}`
+    ) {
       return rpcError(403, "Forbidden", "invalid origin");
     }
   }
@@ -395,10 +496,12 @@ async function handleRpc(req: Request): Promise<Response> {
   // Own properties only — prototype members (toString, constructor, …) are
   // not RPC methods.
   const fn = Object.hasOwn(bindings, method)
-    ? (bindings as unknown as Record<
-        string,
-        (...a: unknown[]) => Promise<unknown>
-      >)[method]
+    ? (
+        bindings as unknown as Record<
+          string,
+          (...a: unknown[]) => Promise<unknown>
+        >
+      )[method]
     : undefined;
   if (!fn) {
     return rpcJson({
@@ -428,7 +531,9 @@ const PORT = server.port;
 
 setupLogging();
 
-console.log(`GRESUI running at http://127.0.0.1:${PORT}/ — press Ctrl+C to stop`);
+console.log(
+  `GRESUI running at http://127.0.0.1:${PORT}/ — press Ctrl+C to stop`,
+);
 
 // Re-bind the MCP listener at boot when it was enabled (persisted flag).
 if (await config.getMcpEnabled()) {
@@ -439,15 +544,17 @@ if (await config.getMcpEnabled()) {
 // Open the default browser (best-effort).
 try {
   const url = `http://127.0.0.1:${PORT}/`;
-  const open = process.platform === "darwin"
-    ? ["open", url]
-    : process.platform === "win32"
-    ? ["cmd", "/c", "start", "", url]
-    : ["xdg-open", url];
+  const open: [string, ...string[]] =
+    process.platform === "darwin"
+      ? ["open", url]
+      : process.platform === "win32"
+        ? ["cmd", "/c", "start", "", url]
+        : ["xdg-open", url];
+  const [exe, ...argv] = open;
   // A missing opener surfaces as an async "error" event (ENOENT), not a sync
   // throw — without a handler it becomes an uncaught exception and kills the
   // server. Never let that happen: the printed URL is enough.
-  const child = spawn(open[0], open.slice(1), { stdio: "ignore" });
+  const child = spawn(exe, argv, { stdio: "ignore" });
   child.on("error", () => {
     // no opener available — the printed URL is enough
   });

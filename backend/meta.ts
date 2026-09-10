@@ -6,8 +6,8 @@ import type {
   IndexInfo,
   RelationInfo,
   TableInfo,
-} from "../../shared/types.ts";
-import { quoteIdent, type PgSession } from "./pg.ts";
+} from "../shared/types.ts";
+import { type PgSession, quoteIdent } from "./pg.ts";
 
 const regclassParam = (schema: string, table: string) =>
   quoteIdent([schema, table]);
@@ -70,7 +70,7 @@ export async function listRelations(
   });
 }
 
-async function listColumns(
+export async function listColumns(
   s: PgSession,
   schema: string,
   table: string,
@@ -95,7 +95,7 @@ async function listColumns(
   }));
 }
 
-async function listPkColumns(
+export async function listPkColumns(
   s: PgSession,
   schema: string,
   table: string,

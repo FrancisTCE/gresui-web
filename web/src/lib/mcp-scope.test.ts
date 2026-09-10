@@ -6,9 +6,11 @@ import type { McpKeyInfo } from "../../../shared/types.ts";
 import {
   canonicalTable,
   keyCoverage,
+  lensFor,
+  lensRestricts,
   tableEntry,
-  withTable,
   withoutTable,
+  withTable,
 } from "./mcp-scope.ts";
 
 const ANCHOR = "shop";
@@ -22,6 +24,7 @@ function key(tables: string[]): McpKeyInfo {
     key: "gres_x",
     scopes: ["get_rows"],
     tables,
+    lenses: [],
     createdAt: "2026-01-01T00:00:00.000Z",
     lastUsedAt: null,
   };
@@ -105,5 +108,56 @@ describe("withTable / withoutTable", () => {
   test("removing the last entry does not silently open the key up", () => {
     // [] means "all tables" — the caller has to handle the empty result.
     assert.deepEqual(withoutTable(key(["public.users"]), USERS, ANCHOR), []);
+  });
+});
+
+describe("lensFor", () => {
+  test("matches a lens written unqualified against a qualified relation", () => {
+    const k = {
+      ...key([]),
+      lenses: [
+        { table: "public.users", hiddenColumns: ["email"], rowFilter: "" },
+      ],
+    };
+    assert.deepEqual(lensFor(k, USERS, ANCHOR)?.hiddenColumns, ["email"]);
+  });
+
+  test("does not leak a lens across databases", () => {
+    const k = {
+      ...key([]),
+      lenses: [
+        { table: "public.orders", hiddenColumns: ["total"], rowFilter: "" },
+      ],
+    };
+    // Same schema.table spelling, different database: not the same relation.
+    assert.equal(lensFor(k, ORDERS, ANCHOR), null);
+  });
+
+  test("no lens means the whole row", () => {
+    assert.equal(lensFor(key([]), USERS, ANCHOR), null);
+  });
+});
+
+describe("lensRestricts", () => {
+  test("a lens that hides nothing and filters nothing restricts nothing", () => {
+    assert.equal(
+      lensRestricts({
+        table: "public.users",
+        hiddenColumns: [],
+        rowFilter: "  ",
+      }),
+      false,
+    );
+  });
+
+  test("a row filter alone is a restriction", () => {
+    assert.equal(
+      lensRestricts({
+        table: "public.users",
+        hiddenColumns: [],
+        rowFilter: "id > 5",
+      }),
+      true,
+    );
   });
 });

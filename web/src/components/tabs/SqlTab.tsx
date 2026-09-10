@@ -1,14 +1,11 @@
 // SQL tab: editor + run/explain/cancel + history + results grid.
 import { CircleStop, History, Play, Wand2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-
-import type { HistoryEntry, QueryResult } from "../../../../shared/types.ts";
 import { useAppStore } from "@/AppStore.tsx";
 import { ErrorBanner } from "@/components/ErrorBanner.tsx";
-import { SqlEditor } from "@/components/SqlEditor.tsx";
-import { DataGrid } from "@/components/grid/DataGrid.tsx";
 import { ExportMenu } from "@/components/export/ExportMenu.tsx";
-import { downloadExport, type ExportFormat } from "@/lib/export.ts";
+import { DataGrid } from "@/components/grid/DataGrid.tsx";
+import { SqlEditor } from "@/components/SqlEditor.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import {
   Dialog,
@@ -19,18 +16,36 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog.tsx";
 import { Skeleton } from "@/components/ui/skeleton.tsx";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.tsx";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip.tsx";
+import { downloadExport, type ExportFormat } from "@/lib/export.ts";
 import { call, getBindings } from "@/lib/rpc.ts";
+import type { HistoryEntry, QueryResult } from "../../../../shared/types.ts";
 
 /** Bare identifier when Postgres would accept it, quoted otherwise. */
 function ident(name: string): string {
-  return /^[a-z_][a-z0-9_]*$/.test(name) ? name : `"${name.replaceAll('"', '""')}"`;
+  return /^[a-z_][a-z0-9_]*$/.test(name)
+    ? name
+    : `"${name.replaceAll('"', '""')}"`;
 }
 
 function starterQuery(schema: string, table: string): string {
   return `SELECT *
 FROM ${ident(schema)}.${ident(table)}
 LIMIT 50;`;
+}
+
+/** Ask the backend to cancel the in-flight query. Closes over nothing, so it
+ * lives out here; a failure means the query already finished. */
+async function cancel(): Promise<void> {
+  try {
+    await call(getBindings().cancelQuery());
+  } catch {
+    // ignore
+  }
 }
 
 export function SqlTab({ active }: { active: boolean }) {
@@ -50,6 +65,10 @@ export function SqlTab({ active }: { active: boolean }) {
   // Opening the tab (or picking another table) drops in a runnable query for
   // the current relation — but never over something the user typed.
   const relation = target ?? lastActive;
+  // `text` is deliberately absent — re-seeding on every keystroke would
+  // fight the user for the editor. schema and table are listed rather than
+  // `relation` so a new object with the same relation does not re-seed.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   useEffect(() => {
     if (!active || !relation) return;
     if (text !== "" && text !== seeded.current) return;
@@ -59,7 +78,6 @@ export function SqlTab({ active }: { active: boolean }) {
     setText(next);
     // `text` is deliberately absent: re-seeding on every keystroke would fight
     // the user for the editor.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, relation?.schema, relation?.table]);
 
   async function run(): Promise<void> {
@@ -74,14 +92,6 @@ export function SqlTab({ active }: { active: boolean }) {
       setError((e as Error).message);
     } finally {
       setRunning(false);
-    }
-  }
-
-  async function cancel(): Promise<void> {
-    try {
-      await call(getBindings().cancelQuery());
-    } catch {
-      // ignore
     }
   }
 
@@ -103,9 +113,12 @@ export function SqlTab({ active }: { active: boolean }) {
     });
   }
 
+  // run() closes over exactly text, running and explain, so listing those is
+  // a hand-written dependency list for that closure. Depending on `run`
+  // itself — a new function every render — would defeat the memo.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   const runCb = useCallback(() => {
     void run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, running, explain]);
 
   function onSplitterDown(e: React.PointerEvent): void {
@@ -137,6 +150,10 @@ export function SqlTab({ active }: { active: boolean }) {
   // editor is focused this listener must stay out of the way — otherwise the
   // same keystroke would fire run() twice. It only handles the case where
   // focus is elsewhere in the SQL tab.
+  // Same as runCb: the listener calls run(), which reads text, running and
+  // explain, so those are the real dependencies rather than the function
+  // identity.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
       if (!active) return; // tab hidden — never fire from another tab
@@ -149,7 +166,6 @@ export function SqlTab({ active }: { active: boolean }) {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, text, running, explain]);
 
   const isExplain = explain && result !== null && result.command === "EXPLAIN";
@@ -158,7 +174,11 @@ export function SqlTab({ active }: { active: boolean }) {
     <div ref={rootRef} className="sql-root flex h-full flex-col bg-background">
       {/* toolbar */}
       <div className="flex shrink-0 items-center gap-1.5 border-b border-border bg-raised px-2 py-1.5">
-        <Button size="sm" onClick={() => void run()} disabled={running || !text.trim()}>
+        <Button
+          size="sm"
+          onClick={() => void run()}
+          disabled={running || !text.trim()}
+        >
           <Play className={running ? "animate-pulse" : ""} />
           Run
         </Button>
@@ -173,7 +193,9 @@ export function SqlTab({ active }: { active: boolean }) {
               Explain
             </Button>
           </TooltipTrigger>
-          <TooltipContent>EXPLAIN (ANALYZE, BUFFERS) — runs in a rolled-back transaction</TooltipContent>
+          <TooltipContent>
+            EXPLAIN (ANALYZE, BUFFERS) — runs in a rolled-back transaction
+          </TooltipContent>
         </Tooltip>
         {running ? (
           <Button size="sm" variant="destructive" onClick={() => void cancel()}>
@@ -181,7 +203,11 @@ export function SqlTab({ active }: { active: boolean }) {
             Cancel
           </Button>
         ) : null}
-        <Button size="sm" variant="secondary" onClick={() => void openHistory()}>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => void openHistory()}
+        >
           <History />
           History
         </Button>
@@ -191,8 +217,16 @@ export function SqlTab({ active }: { active: boolean }) {
       </div>
 
       {/* editor (resizable) */}
-      <div className="shrink-0 border-b border-border" style={{ height: editorH }}>
-        <SqlEditor value={text} onChange={setText} onRun={runCb} theme={theme} />
+      <div
+        className="shrink-0 border-b border-border"
+        style={{ height: editorH }}
+      >
+        <SqlEditor
+          value={text}
+          onChange={setText}
+          onRun={runCb}
+          theme={theme}
+        />
       </div>
       <div
         className="flex h-1.5 shrink-0 cursor-row-resize items-center justify-center hover:bg-surface-active"
@@ -268,10 +302,18 @@ export function SqlTab({ active }: { active: boolean }) {
           </DialogHeader>
           <div className="max-h-80 overflow-y-auto">
             {history.length === 0 ? (
-              <p className="py-4 text-center text-sm text-muted">No history yet.</p>
+              <p className="py-4 text-center text-sm text-muted">
+                No history yet.
+              </p>
             ) : (
               history.map((h, i) => (
                 <button
+                  // Query history has no id; a timestamp can repeat within a
+                  // millisecond, so position is part of the identity.
+                  // Query history has no id and a timestamp can repeat
+                  // within the same millisecond, so position is part of the
+                  // identity.
+                  // biome-ignore lint/suspicious/noArrayIndexKey: see above
                   key={`${h.ts}-${i}`}
                   type="button"
                   onClick={() => {

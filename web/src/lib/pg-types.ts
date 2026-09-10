@@ -4,13 +4,7 @@
 // colours the type column with it, and the SQL editor's highlight style uses
 // the same tokens — so a jsonb column looks like jsonb everywhere in the app.
 
-export type PgTypeClass =
-  | "number"
-  | "bool"
-  | "date"
-  | "uuid"
-  | "json"
-  | "text";
+export type PgTypeClass = "number" | "bool" | "date" | "uuid" | "json" | "text";
 
 const NUMERIC =
   /^(numeric|money|int|int2|int4|int8|float|float4|float8|serial|bigserial|smallint|integer|bigint|real|double)/;

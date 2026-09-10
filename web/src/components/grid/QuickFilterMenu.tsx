@@ -3,12 +3,11 @@
 // are meant to sit inside a ContextMenuContent. Item rows: friendly label
 // left, truncated mono clause right; the full clause goes into onClick.
 import type { JSX } from "react";
-
-import type { CellValue } from "../../../../shared/types.ts";
 import {
   ContextMenuItem,
   ContextMenuSeparator,
 } from "@/components/ui/context-menu.tsx";
+import type { CellValue } from "../../../../shared/types.ts";
 import type { GridColumn, SortState } from "./DataGrid.tsx";
 import { columnKind, quoteIdent, sqlLiteral } from "./filter-ops.ts";
 
@@ -114,9 +113,16 @@ export function CellFilterMenu({
     <>
       {items.map((it, idx) =>
         it.kind === "sep" ? (
+          // A fixed menu, built identically on every render: the position is
+          // the identity, and there is nothing else to key on.
+          // A fixed menu, built identically on every render: the position is
+          // the identity, and a separator has nothing else to key on.
+          // biome-ignore lint/suspicious/noArrayIndexKey: see above
           <ContextMenuSeparator key={idx} />
         ) : (
           <ClauseItem
+            // Same fixed menu: position is identity.
+            // biome-ignore lint/suspicious/noArrayIndexKey: see above
             key={idx}
             label={it.label}
             clause={it.clause}

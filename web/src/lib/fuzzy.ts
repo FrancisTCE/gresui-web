@@ -17,9 +17,13 @@ const BONUS_WORD_START = 10;
 const BONUS_FIRST_CHAR = 8;
 const PENALTY_SKIP = 1;
 
-function isBoundary(prev: string | undefined, cur: string): boolean {
+function isBoundary(
+  prev: string | undefined,
+  cur: string | undefined,
+): boolean {
   if (prev === undefined) return true;
   if (prev === "_" || prev === "." || prev === "-" || prev === " ") return true;
+  if (cur === undefined) return false; // past the end: no hump to find
   // camelCase hump
   return prev === prev.toLowerCase() && cur !== cur.toLowerCase();
 }
@@ -28,7 +32,10 @@ function isBoundary(prev: string | undefined, cur: string): boolean {
  * Score `needle` against `haystack`, or null when the characters of `needle`
  * do not appear in order. An empty needle matches everything at score 0.
  */
-export function fuzzyMatch(needle: string, haystack: string): FuzzyMatch | null {
+export function fuzzyMatch(
+  needle: string,
+  haystack: string,
+): FuzzyMatch | null {
   if (needle === "") return { score: 0, positions: [] };
   const n = needle.toLowerCase();
   const h = haystack.toLowerCase();

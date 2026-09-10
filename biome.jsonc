@@ -1,0 +1,225 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.12/schema.json",
+
+  "files": {
+    "includes": [
+      "backend/**/*.ts",
+      "shared/**/*.ts",
+      "web/src/**/*.ts",
+      "web/src/**/*.tsx",
+      "scripts/**/*.mjs",
+      "bin/**/*.js",
+      "vite.config.ts",
+      "!**/node_modules",
+      "!web/dist",
+      "!dist"
+    ]
+  },
+
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 80,
+    "lineEnding": "lf"
+  },
+
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "jsxQuoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all",
+      "arrowParentheses": "always",
+      "bracketSpacing": true,
+      "bracketSameLine": false
+    }
+  },
+
+  "assist": {
+    "actions": {
+      "source": { "organizeImports": "on" }
+    }
+  },
+
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+
+      "correctness": {
+        "preset": "recommended",
+        "noUnusedImports": "error",
+        "noUnusedVariables": "error",
+        "noUnusedFunctionParameters": "error",
+        "noUnusedPrivateClassMembers": "error",
+        "useExhaustiveDependencies": "error",
+        "useHookAtTopLevel": "error",
+        "noPrivateImports": "error",
+        "noNestedComponentDefinitions": "error",
+        "noUndeclaredDependencies": "error",
+
+        // noUnresolvedImports — Biome resolves specifiers itself and disagrees
+        // with this repo: tsconfig sets allowImportingTsExtensions and the
+        // backend runs .ts straight through Node's type stripping, so every
+        // `./x.ts` reads as unresolved. tsc validates these properly.
+        "noUnresolvedImports": "off",
+
+        // useUniqueElementIds — Wants useId() behind every static id. These ids
+        // belong to singleton dialogs and the labels that point at them, where a
+        // fixed id is what makes the pair readable; nothing here renders twice.
+        "useUniqueElementIds": "off"
+      },
+
+      "suspicious": {
+        "preset": "recommended",
+        "noExplicitAny": "error",
+        "noDoubleEquals": "error",
+        "noDebugger": "error",
+        "noArrayIndexKey": "error",
+        "noVar": "error",
+        "noConstEnum": "error",
+        "noShadow": "error",
+        "noEvolvingTypes": "error",
+        "noImportCycles": "error",
+        "useAwait": "error",
+        "useErrorMessage": "error",
+        "useArraySortCompare": "error",
+        "useGuardForIn": "error",
+        "noEmptyBlockStatements": "error",
+        "noConsole": {
+          "level": "error",
+          "options": { "allow": ["warn", "error"] }
+        },
+
+        // noUnnecessaryConditions — Biome types a Record<string, string> index
+        // access as always-defined, so it calls the `!== undefined` guards
+        // unnecessary — but tsc runs with noUncheckedIndexedAccess, which
+        // requires exactly those guards. Enabling this would mean deleting
+        // checks the typechecker demands.
+        "noUnnecessaryConditions": "off"
+      },
+
+      "complexity": {
+        "preset": "recommended",
+        "noUselessStringConcat": "error",
+        "noUselessUndefinedInitialization": "error",
+        "useDateNow": "error",
+        "useWhile": "error",
+
+        // noVoid — `void promise` is how this codebase marks a deliberately
+        // un-awaited call. It is a signal, not an accident.
+        "noVoid": "off"
+      },
+
+      "performance": {
+        "preset": "recommended",
+        "noDelete": "error",
+        "noAccumulatingSpread": "error",
+        "noBarrelFile": "error",
+        "noReExportAll": "error",
+
+        // useTopLevelRegex — Flags every module-level regex. Hoisting to module
+        // scope is the fix this rule asks for elsewhere; the regexes here are
+        // already constants.
+        "useTopLevelRegex": "off"
+      },
+
+      "security": {
+        "preset": "recommended",
+        "noSecrets": "error"
+      },
+
+      "style": {
+        "preset": "recommended",
+        "noNonNullAssertion": "error",
+        "useConst": "error",
+        "useShorthandFunctionType": "error",
+        "noParameterAssign": "error",
+        "useThrowNewError": "error",
+        "useThrowOnlyError": "error",
+        "useErrorCause": "error",
+        "noYodaExpression": "error",
+
+        // style opinions — Turning these on would mean a wholesale rewrite that
+        // changes no behaviour. A gate that fails on hundreds of pre-existing
+        // opinions stops being read.
+        "useNamingConvention": "off",
+        "useFilenamingConvention": "off",
+        "noDefaultExport": "off",
+        "noImplicitBoolean": "off",
+        "useBlockStatements": "off",
+        "useCollapsedElseIf": "off",
+        "useExplicitLengthCheck": "off",
+        "noMagicNumbers": "off",
+        "useComponentExportOnlyModules": "off"
+      },
+
+      "a11y": {
+        "preset": "recommended",
+
+        // useSemanticElements — Asks for a semantic element where this uses
+        // role= on a div. The grid is a virtualised div tree by necessity — a
+        // real <table> cannot be windowed this way.
+        "useSemanticElements": "off"
+      },
+
+      "nursery": {
+        "preset": "recommended",
+
+        // useSortedClasses — Rewrites every Tailwind class string into a
+        // canonical order: an enormous diff, no behaviour change, and it fights
+        // class lists that are grouped by hand for reading.
+        "useSortedClasses": "off"
+      }
+    }
+  },
+
+  "overrides": [
+    {
+      "includes": ["**/*.test.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            // noNonNullAssertion — An assertion in a test is load-bearing: if
+            // the value is missing the test fails loudly, which is the point.
+            "noNonNullAssertion": "off"
+          },
+          "security": {
+            // noSecrets — conn-string.test.ts parses connection strings, so URLs
+            // with passwords in them are the fixtures under test, not leaked
+            // credentials.
+            "noSecrets": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["backend/main.ts"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            // The process entry point. Its stdout is the user interface —
+            // the startup banner is how you learn which port the server
+            // took — and setupLogging() reassigns console.* on purpose to
+            // tee output into the log file.
+            "noConsole": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["scripts/**/*.mjs", "bin/**/*.js"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            // noConsole — These are CLI entry points; stdout is their interface.
+            "noConsole": "off"
+          }
+        }
+      }
+    }
+  ]
+}

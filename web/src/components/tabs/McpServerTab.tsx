@@ -17,13 +17,15 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-
-import type { McpKeyInfo } from "../../../../shared/types.ts";
 import { useAppStore } from "@/AppStore.tsx";
-import { useMcpStore } from "@/McpStore.tsx";
+import {
+  configSnippet,
+  McpKeyDialog,
+} from "@/components/dialogs/McpKeyDialog.tsx";
+import { ActivityFeed, LensSummary } from "@/components/mcp/ActivityFeed.tsx";
+import { ScopeHeader, ServerStateDot } from "@/components/mcp/McpShared.tsx";
 import { Badge } from "@/components/ui/badge.tsx";
 import { Button } from "@/components/ui/button.tsx";
-import { Skeleton } from "@/components/ui/skeleton.tsx";
 import {
   Dialog,
   DialogContent,
@@ -32,17 +34,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog.tsx";
-import { McpKeyDialog, configSnippet } from "@/components/dialogs/McpKeyDialog.tsx";
-import { ScopeHeader, ServerStateDot } from "@/components/mcp/McpShared.tsx";
+import { Skeleton } from "@/components/ui/skeleton.tsx";
+import { useMcpStore } from "@/McpStore.tsx";
+import type { McpKeyInfo } from "../../../../shared/types.ts";
 
-const CLAUDE_SNIPPET = (url: string): string => JSON.stringify({
-  mcpServers: {
-    gresui: {
-      url,
-      headers: { Authorization: "Bearer <KEY>" },
+const CLAUDE_SNIPPET = (url: string): string =>
+  JSON.stringify(
+    {
+      mcpServers: {
+        gresui: {
+          url,
+          headers: { Authorization: "Bearer <KEY>" },
+        },
+      },
     },
-  },
-}, null, 2);
+    null,
+    2,
+  );
 
 export function McpServerTab({ tabActive }: { tabActive: boolean }) {
   const { connStatus, toastStore } = useAppStore();
@@ -58,6 +66,8 @@ export function McpServerTab({ tabActive }: { tabActive: boolean }) {
     updateKey,
     deleteKey,
   } = useMcpStore();
+  /** The endpoint, narrowed once: null whenever there is nothing to copy. */
+  const url = info?.url ?? null;
   const [busy, setBusy] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<McpKeyInfo | null>(null);
@@ -128,12 +138,13 @@ export function McpServerTab({ tabActive }: { tabActive: boolean }) {
     const label = e.keyName ?? "deleted key";
     keyCounts.set(label, (keyCounts.get(label) ?? 0) + 1);
   }
-  const toolRows = [...toolCounts.entries()].sort((a, b) => b[1] - a[1]);
-  const keyRows = [...keyCounts.entries()].sort((a, b) => b[1] - a[1]);
+  const toolRows = [...toolCounts.entries()].toSorted((a, b) => b[1] - a[1]);
+  const keyRows = [...keyCounts.entries()].toSorted((a, b) => b[1] - a[1]);
   const toolMax = toolRows[0]?.[1] ?? 1;
   const keyMax = keyRows[0]?.[1] ?? 1;
   const today = new Date().toISOString().slice(0, 10);
-  const todayCount = usage?.filter((e) => e.ts.slice(0, 10) === today).length ?? 0;
+  const todayCount =
+    usage?.filter((e) => e.ts.slice(0, 10) === today).length ?? 0;
 
   return (
     <div className="h-full overflow-y-auto bg-background p-4">
@@ -182,9 +193,9 @@ export function McpServerTab({ tabActive }: { tabActive: boolean }) {
             <span className="text-sm font-semibold text-foreground">
               {info?.enabled ? "Serving" : "Stopped"}
             </span>
-            {info?.enabled && info.url ? (
+            {info?.enabled && url !== null ? (
               <code className="truncate rounded bg-surface px-2 py-1 font-mono text-xs text-muted">
-                {info.url}
+                {url}
               </code>
             ) : null}
           </div>
@@ -197,17 +208,17 @@ export function McpServerTab({ tabActive }: { tabActive: boolean }) {
           </Button>
         </div>
 
-        {info?.enabled && info.url ? (
+        {info?.enabled && url !== null ? (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <span className="text-xs font-medium text-muted">Endpoint:</span>
               <code className="rounded bg-surface px-2 py-1 font-mono text-xs text-foreground">
-                {info.url}
+                {url}
               </code>
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => void copy(info.url!, "Endpoint URL")}
+                onClick={() => void copy(url, "Endpoint URL")}
               >
                 <Copy />
                 Copy
@@ -216,10 +227,11 @@ export function McpServerTab({ tabActive }: { tabActive: boolean }) {
 
             <div>
               <p className="mb-1 text-xs font-medium text-muted">
-                Claude Desktop config (replace <code className="font-mono">&lt;KEY&gt;</code>):
+                Claude Desktop config (replace{" "}
+                <code className="font-mono">&lt;KEY&gt;</code>):
               </p>
               <pre className="overflow-x-auto rounded-md border border-border bg-background p-3 font-mono text-xs leading-relaxed text-foreground">
-                {CLAUDE_SNIPPET(info.url)}
+                {CLAUDE_SNIPPET(url)}
               </pre>
             </div>
 
@@ -287,11 +299,15 @@ export function McpServerTab({ tabActive }: { tabActive: boolean }) {
                     size="sm"
                     variant="ghost"
                     onClick={() =>
-                      info && info.url &&
-                      void copy(configSnippet(info.url, k.key), "Config")
+                      url !== null &&
+                      void copy(configSnippet(url, k.key), "Config")
                     }
-                    disabled={!info?.url}
-                    title={info?.url ? "Copy client config with this key" : "Start the MCP server first"}
+                    disabled={url === null}
+                    title={
+                      url !== null
+                        ? "Copy client config with this key"
+                        : "Start the MCP server first"
+                    }
                   >
                     <Copy />
                     Copy config
@@ -337,8 +353,31 @@ export function McpServerTab({ tabActive }: { tabActive: boolean }) {
                   </>
                 )}
               </div>
+              {k.lenses.length > 0 ? (
+                <div className="mt-1.5 space-y-1 rounded-md border border-border bg-background px-2 py-1.5">
+                  {k.lenses.map((l) => (
+                    <div
+                      key={l.table}
+                      className="flex flex-wrap items-center gap-2 text-[11px]"
+                    >
+                      <EyeOff className="size-3 shrink-0 text-warning-text" />
+                      <code className="font-mono text-foreground">
+                        {l.table}
+                      </code>
+                      <LensSummary
+                        hidden={l.hiddenColumns}
+                        filter={l.rowFilter}
+                      />
+                    </div>
+                  ))}
+                  <p className="text-[11px] text-subtle">
+                    Lenses are per relation — edit one from that table&rsquo;s
+                    Table MCP tab.
+                  </p>
+                </div>
+              ) : null}
               <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                {[...k.scopes].sort().map((s) => (
+                {k.scopes.toSorted().map((s) => (
                   <Badge key={s} variant="muted" className="font-mono">
                     {s}
                   </Badge>
@@ -355,8 +394,13 @@ export function McpServerTab({ tabActive }: { tabActive: boolean }) {
         </div>
       )}
 
-      {/* Analytics + usage history */}
+      {/* What is happening right now, across every key on this connection. */}
       <div className="mb-5 mt-6">
+        <ActivityFeed />
+      </div>
+
+      {/* Analytics + usage history */}
+      <div className="mb-5">
         <h2 className="mb-3 text-sm font-semibold text-foreground">
           Analytics
         </h2>
@@ -454,8 +498,8 @@ export function McpServerTab({ tabActive }: { tabActive: boolean }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {usage.map((e, i) => (
-                    <tr key={`${e.ts}-${i}`} className="border-t border-border/60">
+                  {usage.map((e) => (
+                    <tr key={e.id} className="border-t border-border/60">
                       <td className="px-3 py-1.5 text-muted">
                         {new Date(e.ts).toLocaleString()}
                       </td>
@@ -495,12 +539,15 @@ export function McpServerTab({ tabActive }: { tabActive: boolean }) {
         mode={editing ? "edit" : "create"}
         existing={editing}
         tools={tools}
-        url={info?.url ?? null}
+        url={url}
         onCreate={createKey}
         onUpdate={updateKey}
       />
 
-      <Dialog open={deleting !== null} onOpenChange={(o) => !o && setDeleting(null)}>
+      <Dialog
+        open={deleting !== null}
+        onOpenChange={(o) => !o && setDeleting(null)}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Revoke connection?</DialogTitle>
@@ -510,10 +557,18 @@ export function McpServerTab({ tabActive }: { tabActive: boolean }) {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setDeleting(null)} disabled={busy}>
+            <Button
+              variant="secondary"
+              onClick={() => setDeleting(null)}
+              disabled={busy}
+            >
               Cancel
             </Button>
-            <Button variant="destructive" onClick={() => void confirmDelete()} disabled={busy}>
+            <Button
+              variant="destructive"
+              onClick={() => void confirmDelete()}
+              disabled={busy}
+            >
               Revoke
             </Button>
           </DialogFooter>

@@ -15,24 +15,30 @@ interface State {
   error: Error | null;
 }
 
+/** Forward the crash to the backend log. Fire-and-forget on purpose: the
+ * fallback UI is already up, and a failed log must not become a second error
+ * inside the boundary. */
+async function logCrash(detail: string): Promise<void> {
+  try {
+    await call(getBindings().logError(`[boundary] ${detail}`));
+  } catch {
+    // plain-browser mode (no bindings), or the backend is already gone
+  }
+}
+
 export class ErrorBoundary extends Component<Props, State> {
-  state: State = { error: null };
+  override state: State = { error: null };
 
   static getDerivedStateFromError(error: Error): State {
     return { error };
   }
 
-  componentDidCatch(error: Error, info: ErrorInfo): void {
-    const detail =
-      `${error.message}\n${error.stack ?? ""}\n${info.componentStack ?? ""}`;
-    try {
-      call(getBindings().logError(`[boundary] ${detail}`)).catch(() => {});
-    } catch {
-      // plain-browser mode: no bindings
-    }
+  override componentDidCatch(error: Error, info: ErrorInfo): void {
+    const detail = `${error.message}\n${error.stack ?? ""}\n${info.componentStack ?? ""}`;
+    void logCrash(detail);
   }
 
-  render(): ReactNode {
+  override render(): ReactNode {
     if (!this.state.error) return this.props.children;
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 bg-background p-8 text-center">

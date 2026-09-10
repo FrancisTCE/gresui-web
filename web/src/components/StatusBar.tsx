@@ -22,45 +22,37 @@ export function StatusBar() {
         </span>
       </span>
 
-      {active
-        ? (
-          <>
-            <Sep />
-            <span className="truncate font-mono">
-              {active.schema}.{active.table}
-            </span>
-          </>
-        )
-        : null}
+      {active ? (
+        <>
+          <Sep />
+          <span className="truncate font-mono">
+            {active.schema}.{active.table}
+          </span>
+        </>
+      ) : null}
 
       <div className="ml-auto flex shrink-0 items-center gap-3">
-        {viewStatus.label
-          ? (
-            <span className="flex items-center gap-1.5">
-              <Radio className="size-3" />
-              {viewStatus.label}
-            </span>
-          )
-          : null}
-        {viewStatus.total !== undefined
-          ? (
-            <span className="flex items-center gap-1.5 tabular-nums">
-              <Hash className="size-3" />
-              {viewStatus.rows !== undefined
-                ? `${formatCount(viewStatus.rows)} shown · `
-                : ""}
-              {formatRowCount(viewStatus.total, viewStatus.estimated ?? false)}
-            </span>
-          )
-          : null}
-        {viewStatus.elapsedMs !== undefined
-          ? (
-            <span className="flex items-center gap-1.5 tabular-nums">
-              <Clock className="size-3" />
-              {formatDuration(viewStatus.elapsedMs)}
-            </span>
-          )
-          : null}
+        {viewStatus.label ? (
+          <span className="flex items-center gap-1.5">
+            <Radio className="size-3" />
+            {viewStatus.label}
+          </span>
+        ) : null}
+        {viewStatus.total !== undefined ? (
+          <span className="flex items-center gap-1.5 tabular-nums">
+            <Hash className="size-3" />
+            {viewStatus.rows !== undefined
+              ? `${formatCount(viewStatus.rows)} shown · `
+              : ""}
+            {formatRowCount(viewStatus.total, viewStatus.estimated ?? false)}
+          </span>
+        ) : null}
+        {viewStatus.elapsedMs !== undefined ? (
+          <span className="flex items-center gap-1.5 tabular-nums">
+            <Clock className="size-3" />
+            {formatDuration(viewStatus.elapsedMs)}
+          </span>
+        ) : null}
       </div>
     </footer>
   );

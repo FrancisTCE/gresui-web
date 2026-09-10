@@ -2,7 +2,8 @@
 // Swap point for npm:pg: keep this PgSession surface identical.
 
 import postgres from "postgres";
-import type { CellValue, ConnectionConfig, Row } from "../../shared/types.ts";
+import { ignoreError } from "../shared/noop.ts";
+import type { CellValue, ConnectionConfig, Row } from "../shared/types.ts";
 
 export interface QueryOutcome {
   columns: { name: string; type: string }[];
@@ -19,7 +20,9 @@ export function quoteIdent(parts: string[]): string {
 /** Normalize driver values into CellValue (JSON-safe plain data). */
 function normalizeCell(v: unknown): CellValue {
   if (
-    v === null || typeof v === "boolean" || typeof v === "number" ||
+    v === null ||
+    typeof v === "boolean" ||
+    typeof v === "number" ||
     typeof v === "string"
   ) {
     return v;
@@ -72,11 +75,12 @@ export class PgSession {
 
   async connect(): Promise<void> {
     const { cfg } = this;
-    const ssl = cfg.ssl === "disable"
-      ? false
-      : cfg.ssl === "require"
-      ? { rejectUnauthorized: false }
-      : { rejectUnauthorized: true };
+    const ssl =
+      cfg.ssl === "disable"
+        ? false
+        : cfg.ssl === "require"
+          ? { rejectUnauthorized: false }
+          : { rejectUnauthorized: true };
     const sql = postgres({
       host: cfg.host,
       port: cfg.port,
@@ -92,17 +96,21 @@ export class PgSession {
       // Probe — the driver is lazy; this makes connection failures synchronous.
       await sql`SELECT 1`;
     } catch (err) {
-      await sql.end().catch(() => {});
-      throw new Error(pgMessage(err));
+      await sql.end().catch(ignoreError);
+      throw new Error(pgMessage(err), { cause: err });
     }
     this.sql = sql;
     await this.loadTypeMap();
   }
 
   private async loadTypeMap(): Promise<void> {
-    const res = await this.sql!.unsafe<
-      { oid: number; typname: string }[]
-    >("SELECT oid::int4 AS oid, typname FROM pg_type", []);
+    const sql = this.sql;
+    // Only ever called from connect(), immediately after this.sql is set.
+    if (!sql) throw new Error("Not connected");
+    const res = await sql.unsafe<{ oid: number; typname: string }[]>(
+      "SELECT oid::int4 AS oid, typname FROM pg_type",
+      [],
+    );
     this.typeMap = new Map(res.map((r) => [r.oid, r.typname]));
   }
 
@@ -118,19 +126,26 @@ export class PgSession {
     // whose rows are plain objects); multi-statement resolves with a plain
     // array of Results. A multi result's first element is itself a Result
     // (has a `columns` own-property); a single result's first element is a row.
-    return Array.isArray(result) && result.length > 0 &&
-      typeof result[0] === "object" && result[0] !== null &&
-      "columns" in result[0];
+    return (
+      Array.isArray(result) &&
+      result.length > 0 &&
+      typeof result[0] === "object" &&
+      result[0] !== null &&
+      "columns" in result[0]
+    );
   }
 
   private toOutcome(r: unknown): QueryOutcome {
-    const rawCols: RawColumn[] = (r as { columns?: RawColumn[] })?.columns ?? [];
+    const rawCols: RawColumn[] =
+      (r as { columns?: RawColumn[] })?.columns ?? [];
     const columns = rawCols.map((c) => ({
       name: c.name,
       type: this.typeName(c.type),
     }));
     const rows: Row[] = ((r as unknown[]) ?? []).map((row) =>
-      rawCols.map((c) => normalizeCell((row as Record<string, unknown>)[c.name])),
+      rawCols.map((c) =>
+        normalizeCell((row as Record<string, unknown>)[c.name]),
+      ),
     );
     return {
       columns,
@@ -155,11 +170,16 @@ export class PgSession {
       const result = await q;
       if (!this.isMultiResult(result)) return this.toOutcome(result);
       const outcomes = (result as unknown[]).map((r) => this.toOutcome(r));
-      return all ? outcomes : outcomes[0];
+      if (all) return outcomes;
+      const first = outcomes[0];
+      // A multi-result response with no result sets in it is a driver
+      // contradiction, not something a caller can handle.
+      if (first === undefined) throw new Error("Query returned no result set");
+      return first;
     } catch (err) {
       const code = (err as { code?: string })?.code;
       if (code === "57014" || code === "57015") {
-        throw new Error("Query cancelled");
+        throw new Error("Query cancelled", { cause: err });
       }
       throw err;
     } finally {
@@ -168,23 +188,29 @@ export class PgSession {
   }
 
   async query(text: string, params: unknown[] = []): Promise<QueryOutcome> {
-    return await this.run(text, params, false) as QueryOutcome;
+    return (await this.run(text, params, false)) as QueryOutcome;
   }
 
   /** Every result set of a multi-statement string (transaction wraps etc.). */
-  async queryAll(text: string, params: unknown[] = []): Promise<QueryOutcome[]> {
-    return await this.run(text, params, true) as QueryOutcome[];
+  async queryAll(
+    text: string,
+    params: unknown[] = [],
+  ): Promise<QueryOutcome[]> {
+    return (await this.run(text, params, true)) as QueryOutcome[];
   }
 
-  /** Sends a PostgreSQL CancelRequest for the in-flight query. */
-  async cancel(): Promise<void> {
+  /** Sends a PostgreSQL CancelRequest for the in-flight query. Not async:
+   * the driver's cancel is fire-and-forget, and callers only need the promise
+   * shape. */
+  cancel(): Promise<void> {
     this.current?.cancel();
+    return Promise.resolve();
   }
 
   async close(): Promise<void> {
     const sql = this.sql;
     this.sql = null;
-    if (sql) await sql.end().catch(() => {});
+    if (sql) await sql.end().catch(ignoreError);
   }
 }
 
@@ -201,18 +227,21 @@ export class PgPool {
   }
 
   /** Anchor first, then the bundle; exact-match dedupe; empties dropped. */
-  databases(): string[] {
-    const out: string[] = [];
-    for (const d of [this.cfg.database || "postgres", ...(this.cfg.databases ?? [])]) {
+  /** Non-empty by construction: the anchor is always first, so callers can
+   * take [0] without a guard. */
+  databases(): [string, ...string[]] {
+    const anchor = this.cfg.database || "postgres";
+    const out: [string, ...string[]] = [anchor];
+    for (const d of this.cfg.databases ?? []) {
       if (d && !out.includes(d)) out.push(d);
     }
     return out;
   }
 
   /** Lazy per-db connect, cached; concurrent callers share one in-flight connect. */
-  async get(db: string): Promise<PgSession> {
+  get(db: string): Promise<PgSession> {
     const cached = this.sessions.get(db);
-    if (cached) return cached;
+    if (cached) return Promise.resolve(cached);
     const inflight = this.connecting.get(db);
     if (inflight) return inflight;
     const p = (async () => {
@@ -242,6 +271,6 @@ export class PgPool {
     this.connecting.clear();
     const all = [...this.sessions.values()];
     this.sessions.clear();
-    await Promise.all(all.map((s) => s.close().catch(() => {})));
+    await Promise.all(all.map((s) => s.close().catch(ignoreError)));
   }
 }

@@ -1,9 +1,6 @@
 // FilterBar — WHERE clause input + row count + pagination controls.
 import { ChevronLeft, ChevronRight, Filter, X } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
-
-import type { ColumnInfo } from "../../../../shared/types.ts";
-import { BOOL_RE, columnKind } from "./filter-ops.ts";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import {
@@ -13,16 +10,42 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select.tsx";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.tsx";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip.tsx";
 import { formatCount, formatRowCount } from "@/lib/format.ts";
 import { cn } from "@/lib/utils.ts";
+import type { ColumnInfo } from "../../../../shared/types.ts";
+import { BOOL_RE, columnKind } from "./filter-ops.ts";
 
 export const PAGE_SIZES = [50, 100, 250, 500];
 
-const NUM_OPS = ["=", "!=", "<>", ">", ">=", "<", "<=", "IS NULL", "IS NOT NULL"];
+const NUM_OPS = [
+  "=",
+  "!=",
+  "<>",
+  ">",
+  ">=",
+  "<",
+  "<=",
+  "IS NULL",
+  "IS NOT NULL",
+];
 const TEXT_OPS = ["=", "!=", "<>", "LIKE", "ILIKE", "IS NULL", "IS NOT NULL"];
 const BOOL_OPS = ["=", "!=", "IS NULL", "IS NOT NULL"];
-const DATE_OPS = ["=", "!=", "<>", ">", ">=", "<", "<=", "IS NULL", "IS NOT NULL"];
+const DATE_OPS = [
+  "=",
+  "!=",
+  "<>",
+  ">",
+  ">=",
+  "<",
+  "<=",
+  "IS NULL",
+  "IS NOT NULL",
+];
 
 function opsForType(type: string): string[] {
   switch (columnKind(type)) {
@@ -44,7 +67,7 @@ interface Suggestions {
 }
 
 function escapeRe(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return s.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /** Index after the last ` AND `/` OR ` (case-insensitive) ending at or before caret. */
@@ -52,8 +75,11 @@ function tokenStartOf(draft: string, caret: number): number {
   const head = draft.slice(0, caret);
   let last = 0;
   const re = /\s+(?:and|or)\s+/gi;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(head)) !== null) last = m.index + m[0].length;
+  let m = re.exec(head);
+  while (m !== null) {
+    last = m.index + m[0].length;
+    m = re.exec(head);
+  }
   return last;
 }
 
@@ -77,8 +103,11 @@ function computeSuggestions(
 
   // Branch B — exact column name → its type's operators.
   const colMatch = token.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*$/);
-  if (colMatch) {
-    const col = columns.find((c) => c.name.toLowerCase() === colMatch[1].toLowerCase());
+  const colName = colMatch?.[1];
+  if (colName !== undefined) {
+    const col = columns.find(
+      (c) => c.name.toLowerCase() === colName.toLowerCase(),
+    );
     if (col) {
       const ops = opsForType(col.type);
       // Insert after the column token — replacing it would drop the column.
@@ -95,7 +124,7 @@ function computeSuggestions(
       candidates = columns.filter((c) => c.name.toLowerCase().includes(match));
     }
   }
-  const sorted = [...candidates].sort((a, b) => a.ordinal - b.ordinal);
+  const sorted = candidates.toSorted((a, b) => a.ordinal - b.ordinal);
   if (sorted.length === 0) return null;
   return {
     items: sorted.map((c) => c.name),
@@ -146,8 +175,12 @@ export function FilterBar({
   }, [filter]);
 
   // Table switch/refresh: never show suggestions from a previous column set.
+  // `columns` is the trigger, not something the body reads — a new column
+  // set must drop stale suggestions.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   useEffect(() => {
     setSuggestions(null);
+    // `columns` is the trigger, not something the body reads.
   }, [columns]);
 
   // Restore caret after accepting a suggestion (controlled input resets it).
@@ -165,7 +198,10 @@ export function FilterBar({
   useEffect(() => {
     if (!suggestions) return;
     function onPointerDown(e: PointerEvent): void {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(e.target as Node)
+      ) {
         setSuggestions(null);
       }
     }
@@ -184,7 +220,10 @@ export function FilterBar({
     const el = inputRef.current;
     if (!el) return;
     const caret = el.selectionStart ?? el.value.length;
-    const next = el.value.slice(0, suggestions.tokenStart) + item + " " +
+    const next =
+      el.value.slice(0, suggestions.tokenStart) +
+      item +
+      " " +
       el.value.slice(caret);
     const newCaret = suggestions.tokenStart + item.length + 1;
     setDraft(next);
@@ -223,7 +262,10 @@ export function FilterBar({
                   setHighlight((h) => (h - 1 + n) % n);
                 } else if (e.key === "Enter" || e.key === "Tab") {
                   e.preventDefault();
-                  accept(suggestions.items[highlight]);
+                  {
+                    const pick = suggestions.items[highlight];
+                    if (pick !== undefined) accept(pick);
+                  }
                 } else if (e.key === "Escape") {
                   e.preventDefault();
                   setSuggestions(null);
@@ -298,10 +340,11 @@ export function FilterBar({
             {loading && total === 0
               ? "Counting…"
               : total === 0
-              ? "No rows"
-              : `${formatCount(from)}–${formatCount(to)} of ${
-                formatRowCount(total, estimated)
-              }`}
+                ? "No rows"
+                : `${formatCount(from)}–${formatCount(to)} of ${formatRowCount(
+                    total,
+                    estimated,
+                  )}`}
           </span>
           {estimated ? (
             <Tooltip>

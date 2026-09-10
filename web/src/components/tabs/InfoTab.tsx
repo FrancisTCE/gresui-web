@@ -1,18 +1,17 @@
 // Info tab: columns + indexes, read-only.
 import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-
-import type { IndexInfo, TableInfo } from "../../../../shared/types.ts";
 import { useAppStore } from "@/AppStore.tsx";
 import { ErrorBanner } from "@/components/ErrorBanner.tsx";
-import { NoTableSelected } from "@/screens/MainShell.tsx";
+import { NoTableSelected } from "@/components/NoTableSelected.tsx";
 import { Badge } from "@/components/ui/badge.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Skeleton } from "@/components/ui/skeleton.tsx";
 import { formatCount } from "@/lib/format.ts";
 import { typeColorClass } from "@/lib/pg-types.ts";
-import { cn } from "@/lib/utils.ts";
 import { call, getBindings } from "@/lib/rpc.ts";
+import { cn } from "@/lib/utils.ts";
+import type { IndexInfo, TableInfo } from "../../../../shared/types.ts";
 
 export function InfoTab() {
   const { active } = useAppStore();
@@ -22,6 +21,9 @@ export function InfoTab() {
   const [error, setError] = useState("");
   const [tick, setTick] = useState(0);
 
+  // `tick` is a refresh nonce: bumping it is how a manual reload re-runs
+  // this, so it belongs in the list even though the body never reads it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   const load = useCallback(async () => {
     if (!active) return;
     setLoading(true);
@@ -39,6 +41,8 @@ export function InfoTab() {
     } finally {
       setLoading(false);
     }
+    // `tick` is not read here — bumping it is how a manual refresh rebuilds
+    // this callback, which re-runs the effect below.
   }, [active, tick]);
 
   useEffect(() => {
@@ -85,7 +89,11 @@ export function InfoTab() {
             <Stat label="Columns" value={String(info.columns.length)} />
             <Stat
               label="Rows (estimated)"
-              value={info.rowEstimate === null ? "—" : `~${formatCount(info.rowEstimate)}`}
+              value={
+                info.rowEstimate === null
+                  ? "—"
+                  : `~${formatCount(info.rowEstimate)}`
+              }
             />
             <Stat
               label="Primary key"
@@ -154,10 +162,12 @@ export function InfoTab() {
                     <span className="text-sm font-medium text-foreground">
                       {ix.name}
                     </span>
-                    {ix.primary ? <Badge variant="default">primary key</Badge> : null}
-                    {ix.unique && !ix.primary
-                      ? <Badge variant="secondary">unique</Badge>
-                      : null}
+                    {ix.primary ? (
+                      <Badge variant="default">primary key</Badge>
+                    ) : null}
+                    {ix.unique && !ix.primary ? (
+                      <Badge variant="secondary">unique</Badge>
+                    ) : null}
                   </div>
                   <code className="block break-words font-mono text-xs leading-relaxed text-muted">
                     {ix.definition}
@@ -172,12 +182,20 @@ export function InfoTab() {
   );
 }
 
-function Stat(
-  { label, value, mono }: { label: string; value: string; mono?: boolean },
-) {
+function Stat({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
   return (
     <div className="rounded-md border border-border bg-raised px-3 py-2">
-      <dt className="text-[11px] uppercase tracking-wide text-muted">{label}</dt>
+      <dt className="text-[11px] uppercase tracking-wide text-muted">
+        {label}
+      </dt>
       <dd
         className={`truncate text-sm text-foreground${mono ? " font-mono text-xs" : ""}`}
         title={value}

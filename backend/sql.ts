@@ -1,6 +1,7 @@
 // SQL editor execution: runSql, cancel, history recording.
 
-import type { QueryResult } from "../../shared/types.ts";
+import { ignoreError } from "../shared/noop.ts";
+import type { QueryResult } from "../shared/types.ts";
 import { pushHistory } from "./config.ts";
 import type { PgSession, QueryOutcome } from "./pg.ts";
 
@@ -33,8 +34,9 @@ export async function runSql(
       // and defeat the rollback guarantee, so transaction-control statements
       // (at statement start, or after a `;`) are rejected outright.
       if (
-        /(^|;)\s*(BEGIN|START|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|END)\b/i
-          .test(trimmed)
+        /(^|;)\s*(BEGIN|START|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|END)\b/i.test(
+          trimmed,
+        )
       ) {
         throw new Error(
           "EXPLAIN mode does not support transaction control statements",
@@ -48,7 +50,7 @@ export async function runSql(
       } catch (err) {
         // a failed explain can leave the transaction open — close it so the
         // session stays usable
-        await s.query("ROLLBACK").catch(() => {});
+        await s.query("ROLLBACK").catch(ignoreError);
         throw err;
       }
       const explain = res.find((r) => r.columns.length > 0);

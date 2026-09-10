@@ -10,8 +10,8 @@ import type {
   ExportRequest,
   ExportResponse,
   Row,
-} from "../../shared/types.ts";
-import { quoteIdent, type PgSession } from "./pg.ts";
+} from "../shared/types.ts";
+import { type PgSession, quoteIdent } from "./pg.ts";
 
 export const BROWSE_CAP = 10_000;
 export const EXPORT_CAP = 100_000;
@@ -20,12 +20,36 @@ export const EXPORT_CAP = 100_000;
  * browse reports the estimate instead and the UI offers an exact count. */
 export const EXACT_COUNT_MAX = 100_000;
 
+/** The relation a read runs against.
+ *
+ * Without a lens that is the table itself. With one it is a subquery that
+ * selects only the visible columns and pre-applies the lens filter — so the
+ * caller's own `where` and `orderBy` are evaluated against the projection,
+ * and naming a hidden column there fails as "column does not exist" rather
+ * than quietly filtering on data the caller may not read. Stripping hidden
+ * columns from the reply alone would leave them selectable, and a filter on
+ * an unreadable column leaks its contents one comparison at a time. */
+function lensedRelation(
+  schema: string,
+  table: string,
+  lens?: BrowseRequest["lens"],
+): string {
+  const base = quoteIdent([schema, table]);
+  if (!lens) return base;
+  if (lens.columns.length === 0) {
+    throw new Error("lens hides every column of this table");
+  }
+  const cols = lens.columns.map((c) => quoteIdent([c])).join(", ");
+  const filter = lens.filter?.trim() ? ` WHERE ${lens.filter}` : "";
+  return `(SELECT ${cols} FROM ${base}${filter}) AS ${quoteIdent(["gresui_lens"])}`;
+}
+
 /** Shared WHERE/ORDER BY suffix for browse and export. */
 function whereOrderSql(
   where?: string,
   orderBy?: { column: string; dir: "asc" | "desc" },
 ): string {
-  const w = where && where.trim() ? ` WHERE ${where}` : "";
+  const w = where?.trim() ? ` WHERE ${where}` : "";
   const o = orderBy
     ? ` ORDER BY ${quoteIdent([orderBy.column])} ${orderBy.dir === "desc" ? "DESC" : "ASC"}`
     : "";
@@ -64,7 +88,9 @@ async function exactCount(
 ): Promise<number> {
   // count() ignores ORDER BY — including it makes the aggregate query invalid
   // ("column must appear in the GROUP BY clause").
-  const res = await s.query(`SELECT count(*)::text FROM ${q}${whereOrderSql(where)}`);
+  const res = await s.query(
+    `SELECT count(*)::text FROM ${q}${whereOrderSql(where)}`,
+  );
   return Number(res.rows[0]?.[0] ?? 0);
 }
 
@@ -100,7 +126,7 @@ export async function browse(
   s: PgSession,
   req: BrowseRequest,
 ): Promise<BrowseResponse> {
-  const q = quoteIdent([req.schema, req.table]);
+  const q = lensedRelation(req.schema, req.table, req.lens);
   const whereOrder = whereOrderSql(req.where, req.orderBy);
   const limit = Math.min(Math.max(1, req.limit || 50), BROWSE_CAP);
   const offset = Math.max(0, Number(req.offset) || 0);
@@ -173,7 +199,9 @@ export async function updateRow(
   const keys = Object.keys(changes);
   if (keys.length === 0) throw new Error("No values to write");
   const q = quoteIdent([schema, table]);
-  const setSql = keys.map((k, i) => `${quoteIdent([k])} = $${i + 1}`).join(", ");
+  const setSql = keys
+    .map((k, i) => `${quoteIdent([k])} = $${i + 1}`)
+    .join(", ");
   const whereSql = pkColumns
     .map((pk, i) => `${quoteIdent([pk])} = $${keys.length + i + 1}`)
     .join(" AND ");
@@ -199,15 +227,13 @@ export async function deleteRows(
   const q = quoteIdent([schema, table]);
   const per = pkColumns.length;
   const clauses = rows
-    .map((r, ri) =>
-      `(${pkColumns
-        .map((pk, pi) => `${quoteIdent([pk])} = $${ri * per + pi + 1}`)
-        .join(" AND ")})`
+    .map(
+      (_row, ri) =>
+        `(${pkColumns
+          .map((pk, pi) => `${quoteIdent([pk])} = $${ri * per + pi + 1}`)
+          .join(" AND ")})`,
     )
     .join(" OR ");
-  const res = await s.query(
-    `DELETE FROM ${q} WHERE ${clauses}`,
-    rows.flat(),
-  );
+  const res = await s.query(`DELETE FROM ${q} WHERE ${clauses}`, rows.flat());
   return res.rowCount;
 }

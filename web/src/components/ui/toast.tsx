@@ -1,7 +1,7 @@
 import * as ToastPrimitive from "@radix-ui/react-toast";
 import { useSyncExternalStore } from "react";
 
-import { useToastStore, type ToastItem } from "@/lib/toast-store";
+import { type ToastItem, useToastStore } from "@/lib/toast-store";
 import { cn } from "@/lib/utils";
 
 const ToastProvider = ToastPrimitive.Provider;

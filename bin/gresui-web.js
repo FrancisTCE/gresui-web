@@ -74,9 +74,13 @@ try {
 // language-implementation status report on every launch.
 flags.push("--disable-warning=ExperimentalWarning");
 
-const child = spawn(process.execPath, [...flags, entry, ...process.argv.slice(2)], {
-  stdio: "inherit",
-});
+const child = spawn(
+  process.execPath,
+  [...flags, entry, ...process.argv.slice(2)],
+  {
+    stdio: "inherit",
+  },
+);
 
 for (const sig of ["SIGINT", "SIGTERM"]) {
   process.on(sig, () => child.kill(sig));

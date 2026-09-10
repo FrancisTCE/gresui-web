@@ -6,8 +6,8 @@ import {
   describeConnection,
   formatConnectionString,
   looksLikeConnectionString,
-  parseConnectionString,
   type ParsedConnection,
+  parseConnectionString,
 } from "./conn-string.ts";
 
 /** Parsed value, or the error message — keeps the assertions to one line. */
@@ -20,12 +20,14 @@ function warnings(s: string): string[] {
   return parseConnectionString(s).warnings;
 }
 
-const BACKSLASH = String.fromCharCode(92);
+const BACKSLASH = String.fromCodePoint(92);
 
 describe("URI form", () => {
   test("full URI", () => {
     assert.deepEqual(
-      parse("postgresql://alice:s3cret@db.example.com:6543/shop?sslmode=require"),
+      parse(
+        "postgresql://alice:s3cret@db.example.com:6543/shop?sslmode=require",
+      ),
       {
         host: "db.example.com",
         port: 6543,
@@ -49,11 +51,16 @@ describe("URI form", () => {
   });
 
   test("empty host means local", () => {
-    assert.equal((parse("postgres:///mydb") as ParsedConnection).host, "127.0.0.1");
+    assert.equal(
+      (parse("postgres:///mydb") as ParsedConnection).host,
+      "127.0.0.1",
+    );
   });
 
   test("percent-encoded credentials are decoded", () => {
-    const c = parse("postgresql://us%65r:p%40ss%20word@h/db") as ParsedConnection;
+    const c = parse(
+      "postgresql://us%65r:p%40ss%20word@h/db",
+    ) as ParsedConnection;
     assert.equal(c.user, "user");
     assert.equal(c.password, "p@ss word");
   });
@@ -80,9 +87,11 @@ describe("URI form", () => {
       },
     );
     assert.equal(
-      (parse(
-        "postgresql://me:pw@ep-cool-1.eu-central-1.aws.neon.tech/neondb?sslmode=require",
-      ) as ParsedConnection).ssl,
+      (
+        parse(
+          "postgresql://me:pw@ep-cool-1.eu-central-1.aws.neon.tech/neondb?sslmode=require",
+        ) as ParsedConnection
+      ).ssl,
       "require",
     );
   });
@@ -90,12 +99,21 @@ describe("URI form", () => {
 
 describe("sslmode mapping", () => {
   test("verify-ca and verify-full both mean verify", () => {
-    assert.equal((parse("postgres://h/d?sslmode=verify-ca") as ParsedConnection).ssl, "verify");
-    assert.equal((parse("postgres://h/d?sslmode=verify-full") as ParsedConnection).ssl, "verify");
+    assert.equal(
+      (parse("postgres://h/d?sslmode=verify-ca") as ParsedConnection).ssl,
+      "verify",
+    );
+    assert.equal(
+      (parse("postgres://h/d?sslmode=verify-full") as ParsedConnection).ssl,
+      "verify",
+    );
   });
 
   test("opportunistic modes downgrade, and say so", () => {
-    assert.equal((parse("postgres://h/d?sslmode=prefer") as ParsedConnection).ssl, "disable");
+    assert.equal(
+      (parse("postgres://h/d?sslmode=prefer") as ParsedConnection).ssl,
+      "disable",
+    );
     assert.equal(warnings("postgres://h/d?sslmode=prefer").length, 1);
     assert.equal(warnings("postgres://h/d?sslmode=allow").length, 1);
   });
@@ -110,7 +128,9 @@ describe("sslmode mapping", () => {
 describe("keyword/value DSN", () => {
   test("plain pairs", () => {
     assert.deepEqual(
-      parse("host=localhost port=5432 dbname=mydb user=postgres password=secret"),
+      parse(
+        "host=localhost port=5432 dbname=mydb user=postgres password=secret",
+      ),
       {
         host: "localhost",
         port: 5432,
@@ -130,7 +150,7 @@ describe("keyword/value DSN", () => {
   });
 
   test("backslash escapes the quote", () => {
-    const dsn = "host=h dbname=d password='p" + BACKSLASH + "'s'";
+    const dsn = `host=h dbname=d password='p${BACKSLASH}'s'`;
     assert.equal((parse(dsn) as ParsedConnection).password, "p's");
   });
 
@@ -153,9 +173,10 @@ describe("keyword/value DSN", () => {
 
 describe("lossy inputs are reported, never silent", () => {
   test("unknown parameters are listed", () => {
-    assert.deepEqual(warnings("postgres://h/d?connect_timeout=10&application_name=x"), [
-      "Ignored parameters: connect_timeout, application_name.",
-    ]);
+    assert.deepEqual(
+      warnings("postgres://h/d?connect_timeout=10&application_name=x"),
+      ["Ignored parameters: connect_timeout, application_name."],
+    );
     assert.deepEqual(warnings("host=h dbname=d target_session_attrs=rw"), [
       "Ignored parameter: target_session_attrs.",
     ]);
@@ -235,7 +256,10 @@ describe("formatting back out", () => {
       database: "d",
       ssl: "disable",
     };
-    assert.equal(formatConnectionString(ipv6), "postgresql://u@[2001:db8::1]/d");
+    assert.equal(
+      formatConnectionString(ipv6),
+      "postgresql://u@[2001:db8::1]/d",
+    );
     assert.deepEqual(parse(formatConnectionString(ipv6)), ipv6);
   });
 

@@ -1,22 +1,14 @@
 // Table tab: FilterBar + toolbar + DataGrid + RowJsonPane + dialogs.
 import { EyeOff, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-
-import type {
-  BrowseResponse,
-  CellValue,
-  CountMode,
-  TableInfo,
-} from "../../../../shared/types.ts";
 import { useAppStore } from "@/AppStore.tsx";
-import { ErrorBanner } from "@/components/ErrorBanner.tsx";
-import { NoTableSelected } from "@/screens/MainShell.tsx";
 import { InsertRowDialog } from "@/components/dialogs/InsertRowDialog.tsx";
+import { ErrorBanner } from "@/components/ErrorBanner.tsx";
+import { ExportMenu } from "@/components/export/ExportMenu.tsx";
 import { DataGrid, type SortState } from "@/components/grid/DataGrid.tsx";
 import { FilterBar } from "@/components/grid/FilterBar.tsx";
 import { RowJsonPane } from "@/components/grid/RowJsonPane.tsx";
-import { ExportMenu } from "@/components/export/ExportMenu.tsx";
-import { downloadExport, type ExportFormat } from "@/lib/export.ts";
+import { NoTableSelected } from "@/components/NoTableSelected.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import {
   Dialog,
@@ -26,8 +18,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog.tsx";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.tsx";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip.tsx";
+import { downloadExport, type ExportFormat } from "@/lib/export.ts";
+import { qualifiedTable } from "@/lib/mcp-scope.ts";
 import { call, getBindings } from "@/lib/rpc.ts";
+import { useMcpActivity } from "@/McpStore.tsx";
+import type {
+  BrowseResponse,
+  CellValue,
+  CountMode,
+  TableInfo,
+} from "../../../../shared/types.ts";
 
 /** Identity of a row count: the relation plus the filter it was taken under. */
 function countKey(target: string, filter: string): string {
@@ -36,6 +41,9 @@ function countKey(target: string, filter: string): string {
 
 export function TableTab({ tabActive }: { tabActive: boolean }) {
   const { active, toastStore, setViewStatus } = useAppStore();
+  // Null when the MCP store is not mounted (no connection) — the grid simply
+  // does not flash then.
+  const mcpActivity = useMcpActivity();
 
   const [data, setData] = useState<BrowseResponse | null>(null);
   const [tableInfo, setTableInfo] = useState<TableInfo | null>(null);
@@ -57,9 +65,10 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
   /** An exact count the user paid for, kept for as long as it stays true —
    * i.e. until the relation or the filter changes. Without this, "Count
    * exactly" would re-run the full scan on every subsequent page turn. */
-  const [pinnedCount, setPinnedCount] = useState<
-    { key: string; total: number } | null
-  >(null);
+  const [pinnedCount, setPinnedCount] = useState<{
+    key: string;
+    total: number;
+  } | null>(null);
   const isMounted = useRef(true);
   const prevKey = useRef<string | null>(null);
   /** Serialized shape of the last dispatched request — collapses the duplicate
@@ -100,7 +109,15 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
       setJsonOpen(false);
     }
 
-    const req = JSON.stringify([key, effPage, effFilter, effSort, effCount, pageSize, tick]);
+    const req = JSON.stringify([
+      key,
+      effPage,
+      effFilter,
+      effSort,
+      effCount,
+      pageSize,
+      tick,
+    ]);
     if (req === lastReq.current) return; // the reset above already asked for this
     lastReq.current = req;
     const seq = ++reqSeq.current;
@@ -164,23 +181,26 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
     ? `${active.database}:${active.schema}:${active.table}`
     : "";
   // A count is only valid for the relation *and* the filter it was taken under.
-  const pinValid = pinnedCount !== null &&
-    pinnedCount.key === countKey(targetKey, filter);
+  const pinValid =
+    pinnedCount !== null && pinnedCount.key === countKey(targetKey, filter);
   const total = pinValid ? pinnedCount.total : (data?.total ?? 0);
   const estimated = pinValid ? false : (data?.estimated ?? false);
 
   const readOnly =
-    !tableInfo || tableInfo.pkColumns.length === 0 || active?.kind === "v" ||
-    active?.kind === "m" || active?.kind === "f";
+    !tableInfo ||
+    tableInfo.pkColumns.length === 0 ||
+    active?.kind === "v" ||
+    active?.kind === "m" ||
+    active?.kind === "f";
 
   const readOnlyReason =
     active?.kind === "v"
       ? "This is a view — read-only."
       : active?.kind === "m"
-      ? "Materialized view — read-only."
-      : active?.kind === "f"
-      ? "Foreign table — read-only."
-      : "Read-only: no primary key";
+        ? "Materialized view — read-only."
+        : active?.kind === "f"
+          ? "Foreign table — read-only."
+          : "Read-only: no primary key";
 
   async function commitCell(
     row: CellValue[],
@@ -222,7 +242,9 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
       const pkIdx = tableInfo.pkColumns.map((pk) =>
         data.columns.findIndex((c) => c.name === pk),
       );
-      const rows = [...selected].map((i) => pkIdx.map((j) => data!.rows[i][j] ?? null));
+      const rows = [...selected].map((i) =>
+        pkIdx.map((j) => data.rows[i]?.[j] ?? null),
+      );
       const n = await call(
         getBindings().deleteRows(
           active.database,
@@ -248,7 +270,14 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
 
   async function insertRow(values: Record<string, CellValue>): Promise<void> {
     if (!active) return;
-    await call(getBindings().insertRow(active.database, active.schema, active.table, values));
+    await call(
+      getBindings().insertRow(
+        active.database,
+        active.schema,
+        active.table,
+        values,
+      ),
+    );
     toastStore.toast({ title: "Row inserted" });
     setPage(0);
     refetch();
@@ -267,7 +296,10 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
   }
 
   /** Right-click preset filters: replace the WHERE, or AND-append it. */
-  function quickFilter(clause: string, mode: "replace" | "append" = "replace"): void {
+  function quickFilter(
+    clause: string,
+    mode: "replace" | "append" = "replace",
+  ): void {
     setPage(0);
     setFilter(
       mode === "append" && filter.trim()
@@ -288,7 +320,12 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
           orderBy: sort ?? undefined,
         }),
       );
-      downloadExport(res.columns, res.rows, format, `${active.schema}.${active.table}`);
+      downloadExport(
+        res.columns,
+        res.rows,
+        format,
+        `${active.schema}.${active.table}`,
+      );
       toastStore.toast({
         title: `Exported ${res.rows.length.toLocaleString()} row${res.rows.length === 1 ? "" : "s"}`,
         description: res.truncated
@@ -309,17 +346,27 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
   // keyboard shortcuts: Del → delete, Ctrl/Cmd+Shift+R → refresh.
   // Tabs stay mounted when hidden, so bail unless this tab is the active one —
   // otherwise Delete would pop the confirm dialog while editing SQL.
+  // `refetch` is omitted on purpose: it is redeclared every render but its
+  // body only touches refs and setState updaters, so a captured copy behaves
+  // identically and listing it would re-register this listener on every
+  // render.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
       if (!tabActive) return;
       const target = e.target as HTMLElement;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
+      if (
+        target &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA")
+      ) {
         return;
       }
       if (e.key === "Delete" && selected.size > 0 && !readOnly) {
         setDeleteOpen(true);
       } else if (
-        (e.key === "R" || e.key === "r") && (e.ctrlKey || e.metaKey) && e.shiftKey
+        (e.key === "R" || e.key === "r") &&
+        (e.ctrlKey || e.metaKey) &&
+        e.shiftKey
       ) {
         e.preventDefault();
         refetch();
@@ -327,7 +374,7 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, selected, readOnly]);
+  }, [active, selected, readOnly, tabActive]);
 
   /** Row actions, rendered by FilterBar to the left of the pager. */
   function toolbar() {
@@ -386,6 +433,9 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
 
   if (!active) return <NoTableSelected />;
 
+  // Rows an agent read from *this* relation in the last few seconds.
+  const agentRows = mcpActivity?.reads(qualifiedTable(active));
+
   return (
     <div className="flex h-full flex-col bg-background">
       <FilterBar
@@ -409,21 +459,20 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
         actions={toolbar()}
       />
 
-      {error
-        ? (
-          <ErrorBanner
-            message={error}
-            className="m-2 max-h-32 shrink-0 overflow-auto"
-          />
-        )
-        : null}
+      {error ? (
+        <ErrorBanner
+          message={error}
+          className="m-2 max-h-32 shrink-0 overflow-auto"
+        />
+      ) : null}
 
       {readOnly && tableInfo ? (
         <div className="flex items-center gap-2 border-b border-border bg-raised px-3 py-1 text-xs text-muted">
           <EyeOff className="size-3.5 shrink-0" />
           {readOnlyReason}
           <span className="ml-auto font-mono text-[11px] text-subtle">
-            {tableInfo.schema}.{tableInfo.table} · {tableInfo.columns.length} columns
+            {tableInfo.schema}.{tableInfo.table} · {tableInfo.columns.length}{" "}
+            columns
           </span>
         </div>
       ) : null}
@@ -435,15 +484,16 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
           editable
           selectable
           loading={loading}
-          emptyMessage={filter.trim()
-            ? "No rows match the filter."
-            : "This table is empty."}
+          emptyMessage={
+            filter.trim() ? "No rows match the filter." : "This table is empty."
+          }
           pkColumns={tableInfo?.pkColumns ?? []}
           sortState={sort}
           onSortChange={(s) => {
             setPage(0);
             setSort(s);
           }}
+          agentRows={agentRows}
           onQuickFilter={quickFilter}
           onCommitCell={readOnly ? undefined : commitCell}
           selected={selected}
@@ -476,7 +526,9 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Delete {selected.size} row{selected.size === 1 ? "" : "s"}?</DialogTitle>
+            <DialogTitle>
+              Delete {selected.size} row{selected.size === 1 ? "" : "s"}?
+            </DialogTitle>
             <DialogDescription>
               This permanently removes the selected rows from{" "}
               <span className="font-mono">

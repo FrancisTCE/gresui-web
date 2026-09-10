@@ -6,8 +6,8 @@ export type ToastVariant = "default" | "destructive";
 export interface ToastItem {
   id: string;
   title: string;
-  description?: string;
-  variant?: ToastVariant;
+  description?: string | undefined;
+  variant?: ToastVariant | undefined;
   open: boolean;
 }
 

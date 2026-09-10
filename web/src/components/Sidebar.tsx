@@ -1,25 +1,38 @@
 // Sidebar tree: databases → schemas → relations, lazy-expanded, cached.
-import { Database, Folder, Globe, Layers, RefreshCw, Search, Table2, View, X } from "lucide-react";
+import {
+  Database,
+  Folder,
+  Globe,
+  Layers,
+  RefreshCw,
+  Search,
+  Table2,
+  View,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
-import type { RelationKind } from "../../../shared/types.ts";
 import { useAppStore } from "@/AppStore.tsx";
-import { Skeleton } from "@/components/ui/skeleton.tsx";
 import { Input } from "@/components/ui/input.tsx";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.tsx";
+import { Skeleton } from "@/components/ui/skeleton.tsx";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip.tsx";
 import { formatCompact, formatCount } from "@/lib/format.ts";
 import { call, getBindings } from "@/lib/rpc.ts";
 import { cn } from "@/lib/utils.ts";
+import type { RelationKind } from "../../../shared/types.ts";
 
 type TreeNode =
   | { kind: "database"; name: string }
   | { kind: "schema"; name: string }
   | {
-    kind: "relation";
-    name: string;
-    relKind: RelationKind;
-    rowEstimate: number | null;
-  };
+      kind: "relation";
+      name: string;
+      relKind: RelationKind;
+      rowEstimate: number | null;
+    };
 
 const ROOT_KEY = "";
 
@@ -64,48 +77,51 @@ export function Sidebar({
   const [loading, setLoading] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
 
-  const load = useCallback(async (key: string) => {
-    setLoading((s) => new Set(s).add(key));
-    try {
-      const b = getBindings();
-      let children: TreeNode[];
-      if (key === ROOT_KEY) {
-        const dbs = await call(b.listDatabases());
-        children = dbs.map((name) => ({ kind: "database", name }));
-      } else if (key.split(":").length === 1) {
-        const schemas = await call(b.listSchemas(key));
-        children = schemas.map((name) => ({ kind: "schema", name }));
-      } else {
-        const [db, schema] = key.split(":");
-        const rels = await call(b.listRelations(db, schema));
-        children = rels.map((r) => ({
-          kind: "relation",
-          name: r.name,
-          relKind: r.kind,
-          rowEstimate: r.rowEstimate,
-        }));
-      }
-      setNodes((n) => ({ ...n, [key]: children }));
-    } catch (e) {
-      setNodes((n) => ({ ...n, [key]: [] }));
-      if (key === ROOT_KEY) {
-        setConnStatus({ connected: false, error: (e as Error).message });
-      } else {
-        // A dead bundled db must not mark the whole connection disconnected.
-        toastStore.toast({
-          title: "Failed to load",
-          description: (e as Error).message,
-          variant: "destructive",
+  const load = useCallback(
+    async (key: string) => {
+      setLoading((s) => new Set(s).add(key));
+      try {
+        const b = getBindings();
+        let children: TreeNode[];
+        if (key === ROOT_KEY) {
+          const dbs = await call(b.listDatabases());
+          children = dbs.map((name) => ({ kind: "database", name }));
+        } else if (key.split(":").length === 1) {
+          const schemas = await call(b.listSchemas(key));
+          children = schemas.map((name) => ({ kind: "schema", name }));
+        } else {
+          const [db = "", schema = ""] = key.split(":");
+          const rels = await call(b.listRelations(db, schema));
+          children = rels.map((r) => ({
+            kind: "relation",
+            name: r.name,
+            relKind: r.kind,
+            rowEstimate: r.rowEstimate,
+          }));
+        }
+        setNodes((n) => ({ ...n, [key]: children }));
+      } catch (e) {
+        setNodes((n) => ({ ...n, [key]: [] }));
+        if (key === ROOT_KEY) {
+          setConnStatus({ connected: false, error: (e as Error).message });
+        } else {
+          // A dead bundled db must not mark the whole connection disconnected.
+          toastStore.toast({
+            title: "Failed to load",
+            description: (e as Error).message,
+            variant: "destructive",
+          });
+        }
+      } finally {
+        setLoading((s) => {
+          const next = new Set(s);
+          next.delete(key);
+          return next;
         });
       }
-    } finally {
-      setLoading((s) => {
-        const next = new Set(s);
-        next.delete(key);
-        return next;
-      });
-    }
-  }, [setConnStatus, toastStore]);
+    },
+    [setConnStatus, toastStore],
+  );
 
   useEffect(() => {
     void load(ROOT_KEY);
@@ -114,9 +130,14 @@ export function Sidebar({
   // "Refresh catalog" from the command palette. The token starts at 0 and the
   // mount effect above already loaded the root, so skip that first value.
   const firstToken = useRef(refreshToken);
+  // `refresh` is redeclared every render, so depending on it would re-query
+  // the whole catalog on each one. The token is the trigger.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   useEffect(() => {
     if (refreshToken === firstToken.current) return;
     void refresh();
+    // `refresh` is redeclared every render; depending on it would re-query the
+    // whole catalog on each one. The token is the trigger.
   }, [refreshToken]);
 
   async function refresh(): Promise<void> {
@@ -170,18 +191,23 @@ export function Sidebar({
     const list = nodes[key] ?? [];
     const isLoading = loading.has(key);
     // A container that matches by name shows everything inside it.
-    const parentMatches = key !== ROOT_KEY && matches(key.split(":").pop() ?? "");
-    const visible = list.filter((n) =>
-      parentMatches ||
-      matches(n.name) ||
-      hits.has(childKeyOf(key, n.name)) ||
-      // not loaded yet — keep it expandable so the user can search deeper
-      (n.kind !== "relation" && nodes[childKeyOf(key, n.name)] === undefined)
+    const parentMatches =
+      key !== ROOT_KEY && matches(key.split(":").pop() ?? "");
+    const visible = list.filter(
+      (n) =>
+        parentMatches ||
+        matches(n.name) ||
+        hits.has(childKeyOf(key, n.name)) ||
+        // not loaded yet — keep it expandable so the user can search deeper
+        (n.kind !== "relation" && nodes[childKeyOf(key, n.name)] === undefined),
     );
 
     if (isLoading && list.length === 0) {
       return (
-        <div className="space-y-1 py-1" style={{ paddingLeft: `${indent * 14 + 30}px` }}>
+        <div
+          className="space-y-1 py-1"
+          style={{ paddingLeft: `${indent * 14 + 30}px` }}
+        >
           <Skeleton className="h-4 w-3/4" />
           <Skeleton className="h-4 w-1/2" />
         </div>
@@ -193,10 +219,10 @@ export function Sidebar({
       const label = q
         ? "No matches"
         : depth === 0
-        ? "No databases"
-        : depth === 1
-        ? "No schemas"
-        : "No tables";
+          ? "No databases"
+          : depth === 1
+            ? "No schemas"
+            : "No tables";
       return (
         <div
           className="px-3 py-1 text-xs text-muted"
@@ -213,8 +239,9 @@ export function Sidebar({
       const isOpen = expanded.has(childKey) || hits.has(childKey);
 
       if (node.kind === "relation") {
-        const [db, schema] = key.split(":");
-        const isActive = active?.database === db &&
+        const [db = "", schema = ""] = key.split(":");
+        const isActive =
+          active?.database === db &&
           active?.schema === schema &&
           active?.table === node.name;
         const est = node.rowEstimate;
@@ -228,7 +255,8 @@ export function Sidebar({
                 schema,
                 table: node.name,
                 kind: node.relKind,
-              })}
+              })
+            }
             title={`${KIND_LABEL[node.relKind]} · ${schema}.${node.name}${
               est !== null ? ` · ~${formatCount(est)} rows` : ""
             }`}
@@ -254,7 +282,9 @@ export function Sidebar({
               <span
                 className={cn(
                   "shrink-0 rounded px-1 font-mono text-[10px] tabular-nums transition-colors",
-                  isActive ? "text-accent-text" : "text-subtle group-hover:text-muted",
+                  isActive
+                    ? "text-accent-text"
+                    : "text-subtle group-hover:text-muted",
                 )}
               >
                 {formatCompact(est)}
@@ -329,7 +359,9 @@ export function Sidebar({
               className="shrink-0 rounded-md p-1.5 text-muted hover:bg-surface hover:text-foreground"
               aria-label="Refresh"
             >
-              <RefreshCw className={cn("size-4", loading.size > 0 && "animate-spin")} />
+              <RefreshCw
+                className={cn("size-4", loading.size > 0 && "animate-spin")}
+              />
             </button>
           </TooltipTrigger>
           <TooltipContent>Refresh tree</TooltipContent>
@@ -351,9 +383,9 @@ export function Sidebar({
 
 /** Marks the matched span so a search hit stands out in a long list. */
 function Highlight({ text, match }: { text: string; match: string }) {
-  if (!match) return <>{text}</>;
+  if (!match) return text;
   const i = text.toLowerCase().indexOf(match);
-  if (i === -1) return <>{text}</>;
+  if (i === -1) return text;
   return (
     <>
       {text.slice(0, i)}

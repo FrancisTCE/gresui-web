@@ -139,6 +139,21 @@
   --animate-pop-in: pop-in 140ms var(--ease-out);
   --animate-slide-up: slide-up 180ms var(--ease-out);
   --animate-shimmer: shimmer 1.4s linear infinite;
+  /* Two beats of ring on a row an MCP agent just read — decorative only, on
+     top of the static tint below, so the row still reads as touched when
+     animation is off. */
+  --animate-agent-read: agent-read 1.8s var(--ease-out) 2;
+}
+
+@theme {
+  /* The steady tint a row carries for as long as the app considers it
+     recently read. Strong enough to spot while looking elsewhere on screen,
+     weak enough that a whole page of them stays readable. */
+  --color-agent-read: color-mix(in srgb, var(--accent) 15%, transparent);
+  --color-agent-read-ring: color-mix(in srgb, var(--accent) 55%, transparent);
+  /* Hovering a read row must still read as hover, without dropping back to
+     the neutral hover shade and hiding that an agent touched it. */
+  --color-agent-read-hover: color-mix(in srgb, var(--accent) 26%, transparent);
 }
 
 /* ---------------------------------------------------------------------------
@@ -191,6 +206,18 @@
   }
 }
 
+@keyframes agent-read {
+  /* An inset ring rather than a background: the background is already carrying
+     the steady tint, and animating it would fight that. */
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 0 transparent;
+  }
+  40% {
+    box-shadow: inset 0 0 0 1px var(--color-agent-read-ring);
+  }
+}
+
 @keyframes shimmer {
   from {
     background-position: -160% 0;
@@ -238,9 +265,15 @@ h3 {
   background: var(--selection);
 }
 
-:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 1px;
+/* The app-wide focus ring. In @layer base so it is a *default*: unlayered
+   it would outrank every Tailwind utility, and a component that wants a
+   different offset — or no ring at all, because it already shows focus some
+   other way — could not say so. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
 }
 
 /* Firefox has no ::-webkit-scrollbar; this is the only knob it offers. */
