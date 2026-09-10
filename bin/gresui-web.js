@@ -1,12 +1,24 @@
 #!/usr/bin/env node
-// gresui-web launcher — runs backend/main.ts on the Node that started us.
+// gresui-web launcher — runs the backend on the Node that started us.
 //
-// Node executes TypeScript directly by stripping types, and ships SQLite as a
-// built-in, so there is no runtime to download and no build step. Both landed
-// behind flags before they were turned on by default, so probe this Node and
-// pass the flags only when it still needs them.
+// Two entry points, because Node will not strip types under node_modules:
+//
+//   backend/main.ts   the source — present only in a git checkout
+//   server/main.js    compiled at pack time — what an installed copy runs
+//
+// The source wins when it is there. Checking for it rather than for the
+// bundle is what keeps `npm run dev` honest: the bundle also exists in the
+// repo once you have run a build, and preferring it would silently ignore
+// every later edit to backend/. The published tarball ships no backend/, so
+// an installed copy has only the bundle to find.
+//
+// Node ships SQLite as a built-in and strips types itself, so working in the
+// repo still needs no build step. Both landed behind flags before they were
+// turned on by default, so probe this Node and pass the flags only when it
+// still needs them.
 
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,10 +43,25 @@ if (versionTooOld()) {
   process.exit(1);
 }
 
+const source = path.join(pkgDir, "backend", "main.ts");
+const compiled = path.join(pkgDir, "server", "main.js");
+const needsTypeStripping = existsSync(source);
+const entry = needsTypeStripping ? source : compiled;
+
+if (!needsTypeStripping && !existsSync(compiled)) {
+  console.error(
+    "gresui-web: no backend found — expected either backend/main.ts (git " +
+      "checkout) or server/main.js (installed). Try reinstalling.",
+  );
+  process.exit(1);
+}
+
 const flags = [];
 
 // process.features.typescript: "strip" | "transform" | false (Node 22.10+).
-if (!process.features.typescript) flags.push("--experimental-strip-types");
+if (needsTypeStripping && !process.features.typescript) {
+  flags.push("--experimental-strip-types");
+}
 
 // node:sqlite throws ERR_UNKNOWN_BUILTIN_MODULE until it is unflagged.
 try {
@@ -47,7 +74,6 @@ try {
 // language-implementation status report on every launch.
 flags.push("--disable-warning=ExperimentalWarning");
 
-const entry = path.join(pkgDir, "backend", "main.ts");
 const child = spawn(process.execPath, [...flags, entry, ...process.argv.slice(2)], {
   stdio: "inherit",
 });

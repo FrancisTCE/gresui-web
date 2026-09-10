@@ -62,10 +62,12 @@ auto-fit. The same gestures work on the sidebar's edge.
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org) 22.6+ — the backend runs its TypeScript
-  directly (type stripping) and uses the built-in `node:sqlite`. On 24+ both
-  are on by default; older versions get the experimental flags from the
-  launcher automatically.
+- [Node.js](https://nodejs.org) 22.6+ — the backend uses the built-in
+  `node:sqlite`, and in a git checkout Node runs its TypeScript directly
+  (type stripping), so working on it needs no build step. On 24+ both are on
+  by default; older versions get the experimental flags from the launcher
+  automatically. An installed copy runs a compiled `server/main.js` instead,
+  because Node will not strip types under `node_modules`.
 - [Docker](https://www.docker.com) (optional, for a local test database)
 
 ## Quick start (dev mode)
@@ -74,7 +76,7 @@ auto-fit. The same gestures work on the sidebar's edge.
 # 1. Install dependencies
 npm install
 
-# 2. Build the React frontend once
+# 2. Build the frontend (and the backend bundle the published package ships)
 npm run build
 
 # 3. Start the backend (serves the built frontend)
