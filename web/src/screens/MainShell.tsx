@@ -6,31 +6,46 @@ import {
   PanelLeftOpen,
   Plug,
   Search,
+  Server,
   SquareTerminal,
   Table2,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useAppStore } from "@/AppStore.tsx";
+import { useMcpStore } from "@/McpStore.tsx";
 import { CommandPalette } from "@/components/CommandPalette.tsx";
 import { Sidebar } from "@/components/Sidebar.tsx";
 import { StatusBar } from "@/components/StatusBar.tsx";
 import { TopBar } from "@/components/TopBar.tsx";
 import { InfoTab } from "@/components/tabs/InfoTab.tsx";
-import { McpTab } from "@/components/tabs/McpTab.tsx";
+import { McpServerTab } from "@/components/tabs/McpServerTab.tsx";
+import { TableMcpTab } from "@/components/tabs/TableMcpTab.tsx";
 import { SqlTab } from "@/components/tabs/SqlTab.tsx";
 import { TableTab } from "@/components/tabs/TableTab.tsx";
+import { ServerStateDot } from "@/components/mcp/McpShared.tsx";
 import { Kbd } from "@/components/ui/kbd.tsx";
 import { isModifier, modKeyLabel } from "@/lib/platform.ts";
 import { cn } from "@/lib/utils.ts";
 
-export type TabId = "table" | "sql" | "info" | "mcp";
+export type TabId = "table" | "sql" | "info" | "tableMcp" | "mcpServer";
 
-const TABS: { id: TabId; label: string; icon: typeof Table2 }[] = [
+/** The two MCP tabs are separated by a rule: everything up to it is about the
+ * relation in front of the user, "MCP Server" is about the whole connection.
+ * They used to be one tab reachable two ways, which is why nobody could tell
+ * which scope they had opened. */
+const TABS: {
+  id: TabId;
+  label: string;
+  icon: typeof Table2;
+  /** Draw the group separator before this tab. */
+  divider?: boolean;
+}[] = [
   { id: "table", label: "Table", icon: Table2 },
   { id: "sql", label: "SQL", icon: SquareTerminal },
   { id: "info", label: "Info", icon: InfoIcon },
-  { id: "mcp", label: "MCP", icon: Plug },
+  { id: "tableMcp", label: "Table MCP", icon: Plug },
+  { id: "mcpServer", label: "MCP Server", icon: Server, divider: true },
 ];
 
 const SIDEBAR_MIN = 180;
@@ -51,6 +66,7 @@ function storedWidth(): number {
 
 export function MainShell() {
   const { active } = useAppStore();
+  const { server } = useMcpStore();
   const [tab, setTab] = useState<TabId>("table");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(storedWidth);
@@ -77,7 +93,7 @@ export function MainShell() {
         setCollapsed((v) => !v);
         return;
       }
-      if (isModifier(e) && e.key >= "1" && e.key <= "4") {
+      if (isModifier(e) && e.key >= "1" && e.key <= "5") {
         const next = TABS[Number(e.key) - 1];
         if (next) {
           e.preventDefault();
@@ -130,7 +146,7 @@ export function MainShell() {
     <div className="flex h-full flex-col bg-background">
       <TopBar
         onOpenSql={() => setTab("sql")}
-        onOpenMcp={() => setTab("mcp")}
+        onOpenMcpServer={() => setTab("mcpServer")}
         onOpenPalette={() => setPaletteOpen(true)}
       />
       <div className="flex min-h-0 flex-1">
@@ -167,12 +183,14 @@ export function MainShell() {
                 : <PanelLeftClose className="size-4" />}
             </button>
             <div className="my-auto h-4 w-px bg-border" />
-            {TABS.map(({ id, label, icon: Icon }) => (
+            {TABS.map(({ id, label, icon: Icon, divider }) => (
+              <div key={id} className="flex items-stretch">
+                {divider ? <div className="my-auto mr-1.5 h-4 w-px bg-border" /> : null}
               <button
-                key={id}
                 type="button"
                 onClick={() => setTab(id)}
                 aria-current={tab === id}
+                title={`${label} (${modKeyLabel()}+${TABS.findIndex((t) => t.id === id) + 1})`}
                 className={cn(
                   "relative flex items-center gap-1.5 px-2.5 text-[13px] font-medium transition-colors",
                   tab === id
@@ -182,6 +200,10 @@ export function MainShell() {
               >
                 <Icon className="size-4" />
                 {label}
+                {/* A running server is worth seeing from anywhere. */}
+                {id === "mcpServer" && server?.enabled
+                  ? <ServerStateDot enabled className="ml-0.5" />
+                  : null}
                 {/* Indicator rides the button rather than a shared track, so it
                     cross-fades between tabs instead of sliding through them. */}
                 <span
@@ -191,6 +213,7 @@ export function MainShell() {
                   )}
                 />
               </button>
+              </div>
             ))}
           </div>
           <div className={cn("min-h-0 flex-1", tab !== "table" && "hidden")}>
@@ -202,8 +225,14 @@ export function MainShell() {
           <div className={cn("min-h-0 flex-1", tab !== "info" && "hidden")}>
             <InfoTab />
           </div>
-          <div className={cn("min-h-0 flex-1", tab !== "mcp" && "hidden")}>
-            <McpTab tabActive={tab === "mcp"} />
+          <div className={cn("min-h-0 flex-1", tab !== "tableMcp" && "hidden")}>
+            <TableMcpTab
+              tabActive={tab === "tableMcp"}
+              onOpenServer={() => setTab("mcpServer")}
+            />
+          </div>
+          <div className={cn("min-h-0 flex-1", tab !== "mcpServer" && "hidden")}>
+            <McpServerTab tabActive={tab === "mcpServer"} />
           </div>
         </main>
       </div>
@@ -213,7 +242,8 @@ export function MainShell() {
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
         onOpenSql={() => setTab("sql")}
-        onOpenMcp={() => setTab("mcp")}
+        onOpenTableMcp={() => setTab("tableMcp")}
+        onOpenMcpServer={() => setTab("mcpServer")}
         onRefresh={() => setRefreshToken((t) => t + 1)}
       />
     </div>

@@ -1,15 +1,26 @@
-// MCP tab: server toggle, endpoint + client snippet, API key management.
-// Reachable only while connected (MainShell); tools need a live session.
-import { AlertCircle, Copy, Eye, EyeOff, Pencil, Plug, Plus, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+// MCP Server tab — the connection-wide view: the server itself, every client
+// connection (API key) served from it, and usage across all of them.
+//
+// Deliberately says nothing about the relation the user happens to have open;
+// that is the Table MCP tab's job. Two panels that showed the same thing were
+// the reason nobody could tell which scope they were looking at.
+import {
+  AlertCircle,
+  Copy,
+  Eye,
+  EyeOff,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Server,
+  Table2,
+  Trash2,
+} from "lucide-react";
+import { useEffect, useState } from "react";
 
-import type {
-  McpKeyInfo,
-  McpServerInfo,
-  McpToolInfo,
-  McpUsageEntry,
-} from "../../../../shared/types.ts";
+import type { McpKeyInfo } from "../../../../shared/types.ts";
 import { useAppStore } from "@/AppStore.tsx";
+import { useMcpStore } from "@/McpStore.tsx";
 import { Badge } from "@/components/ui/badge.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Skeleton } from "@/components/ui/skeleton.tsx";
@@ -22,7 +33,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog.tsx";
 import { McpKeyDialog, configSnippet } from "@/components/dialogs/McpKeyDialog.tsx";
-import { call, getBindings } from "@/lib/rpc.ts";
+import { ScopeHeader, ServerStateDot } from "@/components/mcp/McpShared.tsx";
 
 const CLAUDE_SNIPPET = (url: string): string => JSON.stringify({
   mcpServers: {
@@ -33,60 +44,39 @@ const CLAUDE_SNIPPET = (url: string): string => JSON.stringify({
   },
 }, null, 2);
 
-export function McpTab({ tabActive }: { tabActive: boolean }) {
-  const { connStatus, toastStore, active } = useAppStore();
-  const [info, setInfo] = useState<McpServerInfo | null>(null);
-  const [keys, setKeys] = useState<McpKeyInfo[]>([]);
-  const [tools, setTools] = useState<McpToolInfo[]>([]);
+export function McpServerTab({ tabActive }: { tabActive: boolean }) {
+  const { connStatus, toastStore } = useAppStore();
+  const {
+    server: info,
+    keys,
+    tools,
+    usage,
+    loading,
+    refresh,
+    setEnabled,
+    createKey,
+    updateKey,
+    deleteKey,
+  } = useMcpStore();
   const [busy, setBusy] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<McpKeyInfo | null>(null);
   const [deleting, setDeleting] = useState<McpKeyInfo | null>(null);
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
-  const [createDefaultTables, setCreateDefaultTables] = useState<string[]>([]);
-  const [usage, setUsage] = useState<McpUsageEntry[] | null>(null);
-
-  const load = useCallback(async () => {
-    const b = getBindings();
-    try {
-      const [i, ks, ts, u] = await Promise.all([
-        call(b.getMcpServerInfo()),
-        call(b.listMcpKeys()),
-        call(b.listMcpTools()),
-        call(b.listMcpUsage()),
-      ]);
-      setInfo(i);
-      setKeys(ks);
-      setTools(ts);
-      setUsage(u);
-    } catch (e) {
-      toastStore.toast({
-        title: "Failed to load MCP settings",
-        description: (e as Error).message,
-        variant: "destructive",
-      });
-    }
-  }, [toastStore]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   // The panel stays mounted while other tabs are shown (MainShell toggles
-  // visibility), so re-fetch whenever the MCP tab is (re)opened.
+  // visibility), so re-fetch whenever it is (re)opened.
   useEffect(() => {
-    if (tabActive) void load();
-  }, [tabActive, load]);
+    if (tabActive) void refresh();
+  }, [tabActive, refresh]);
 
   async function toggleEnabled(): Promise<void> {
     if (!info) return;
     setBusy(true);
     try {
-      const next = await call(getBindings().setMcpEnabled(!info.enabled));
-      setInfo(next);
+      await setEnabled(!info.enabled);
       toastStore.toast({
-        title: next.enabled ? "MCP enabled" : "MCP disabled",
-        description: next.url ?? undefined,
+        title: info.enabled ? "MCP server stopped" : "MCP server started",
       });
     } catch (e) {
       toastStore.toast({
@@ -116,13 +106,12 @@ export function McpTab({ tabActive }: { tabActive: boolean }) {
     if (!deleting) return;
     setBusy(true);
     try {
-      await call(getBindings().deleteMcpKey(deleting.id));
-      toastStore.toast({ title: `API key "${deleting.name}" deleted` });
+      await deleteKey(deleting.id);
+      toastStore.toast({ title: `Connection "${deleting.name}" revoked` });
       setDeleting(null);
-      setKeys((ks) => ks.filter((k) => k.id !== deleting.id));
     } catch (e) {
       toastStore.toast({
-        title: "Failed to delete API key",
+        title: "Failed to revoke connection",
         description: (e as Error).message,
         variant: "destructive",
       });
@@ -148,6 +137,31 @@ export function McpTab({ tabActive }: { tabActive: boolean }) {
 
   return (
     <div className="h-full overflow-y-auto bg-background p-4">
+      <ScopeHeader
+        icon={Server}
+        title="MCP Server"
+        subtitle="Connection-wide: the server and every client connected to it."
+        scope={
+          <Badge variant="secondary" className="font-mono">
+            {connStatus.database ?? "not connected"}
+          </Badge>
+        }
+        actions={
+          // Usage arrives from MCP clients, not from anything the user does
+          // here, so this panel needs a way to catch up without a tab dance.
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => void refresh()}
+            disabled={loading}
+            title="Reload keys and usage"
+          >
+            <RefreshCw className={loading ? "animate-spin" : ""} />
+            Refresh
+          </Button>
+        }
+      />
+
       {!connStatus.connected ? (
         <div
           role="alert"
@@ -161,18 +175,25 @@ export function McpTab({ tabActive }: { tabActive: boolean }) {
       ) : null}
 
       {/* Server card */}
-      <div className="mb-5 rounded-md border border-border bg-raised p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-            <Plug className="size-4 text-accent-text" />
-            MCP Server
-          </h2>
+      <div className="mb-6 rounded-md border border-border bg-raised p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <ServerStateDot enabled={info?.enabled ?? false} />
+            <span className="text-sm font-semibold text-foreground">
+              {info?.enabled ? "Serving" : "Stopped"}
+            </span>
+            {info?.enabled && info.url ? (
+              <code className="truncate rounded bg-surface px-2 py-1 font-mono text-xs text-muted">
+                {info.url}
+              </code>
+            ) : null}
+          </div>
           <Button
             variant={info?.enabled ? "secondary" : "default"}
             onClick={() => void toggleEnabled()}
             disabled={busy || !info}
           >
-            {info?.enabled ? "Disable" : "Enable"}
+            {info?.enabled ? "Stop server" : "Start server"}
           </Button>
         </div>
 
@@ -209,39 +230,31 @@ export function McpTab({ tabActive }: { tabActive: boolean }) {
           </div>
         ) : (
           <p className="text-sm text-muted">
-            Enable the server to expose the connected database to MCP clients
-            on this machine.
+            Start the server to expose the connected database to MCP clients on
+            this machine.
           </p>
         )}
       </div>
 
-      {/* Keys */}
+      {/* Connections (API keys) */}
       <div className="mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="min-w-0">
           <h2 className="text-sm font-semibold text-foreground">
-            API Keys ({keys.length})
+            Connections ({keys.length})
           </h2>
-          {active?.table ? (
-            <Badge variant="secondary" className="font-mono text-[11px]">
-              scoped to {active.database}.{active.schema}.{active.table}
-            </Badge>
-          ) : null}
+          <p className="text-xs text-muted">
+            One API key per client. Each carries its own tool scopes and table
+            reach.
+          </p>
         </div>
-        <Button
-          size="sm"
-          onClick={() => {
-            const t = active && active.table ? `${active.database}.${active.schema}.${active.table}` : null;
-            setCreateDefaultTables(t ? [t] : []);
-            setCreateOpen(true);
-          }}
-        >
+        <Button size="sm" onClick={() => setCreateOpen(true)}>
           <Plus />
-          New Key
+          New connection
         </Button>
       </div>
       {keys.length === 0 ? (
-        <p className="text-sm text-muted">
-          No API keys yet — create one to connect an MCP client.
+        <p className="rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-muted">
+          No connections yet — create one to connect an MCP client.
         </p>
       ) : (
         <div className="space-y-2">
@@ -278,7 +291,7 @@ export function McpTab({ tabActive }: { tabActive: boolean }) {
                       void copy(configSnippet(info.url, k.key), "Config")
                     }
                     disabled={!info?.url}
-                    title={info?.url ? "Copy client config with this key" : "Enable the MCP server first"}
+                    title={info?.url ? "Copy client config with this key" : "Start the MCP server first"}
                   >
                     <Copy />
                     Copy config
@@ -295,25 +308,41 @@ export function McpTab({ tabActive }: { tabActive: boolean }) {
                     size="sm"
                     variant="ghost"
                     onClick={() => setDeleting(k)}
-                    aria-label={`Delete ${k.name}`}
+                    aria-label={`Revoke ${k.name}`}
                   >
                     <Trash2 />
                   </Button>
                 </div>
               </div>
+
+              {/* Reach first: what this connection can read matters more at a
+                  glance than which tools it may call. */}
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {k.tables.length === 0 ? (
+                  <Badge variant="default" className="gap-1">
+                    <Table2 />
+                    All tables
+                  </Badge>
+                ) : (
+                  <>
+                    <Badge variant="secondary" className="gap-1">
+                      <Table2 />
+                      {k.tables.length} table{k.tables.length === 1 ? "" : "s"}
+                    </Badge>
+                    {k.tables.map((t) => (
+                      <Badge key={t} variant="outline" className="font-mono">
+                        {t}
+                      </Badge>
+                    ))}
+                  </>
+                )}
+              </div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                 {[...k.scopes].sort().map((s) => (
-                  <Badge key={s} variant="secondary" className="font-mono text-[11px]">
+                  <Badge key={s} variant="muted" className="font-mono">
                     {s}
                   </Badge>
                 ))}
-                {k.tables.length > 0
-                  ? k.tables.map((t) => (
-                      <Badge key={t} variant="outline" className="font-mono text-[11px]">
-                        {t}
-                      </Badge>
-                    ))
-                  : <span className="text-[11px] text-muted">all tables</span>}
                 <span className="ml-auto text-[11px] text-muted">
                   created {new Date(k.createdAt).toLocaleString()}
                   {k.lastUsedAt
@@ -359,7 +388,7 @@ export function McpTab({ tabActive }: { tabActive: boolean }) {
                 </p>
               </div>
               <div className="rounded-md border border-border bg-raised p-3">
-                <p className="text-xs text-muted">API keys</p>
+                <p className="text-xs text-muted">Connections</p>
                 <p className="text-lg font-semibold text-foreground">
                   {keys.length}
                 </p>
@@ -389,7 +418,7 @@ export function McpTab({ tabActive }: { tabActive: boolean }) {
             </div>
 
             <h3 className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-muted">
-              By key
+              By connection
             </h3>
             <div className="space-y-1.5">
               {keyRows.map(([label, count]) => (
@@ -418,7 +447,7 @@ export function McpTab({ tabActive }: { tabActive: boolean }) {
                 <thead>
                   <tr className="bg-raised text-left text-xs text-muted">
                     <th className="px-3 py-1.5 font-medium">Time</th>
-                    <th className="px-3 py-1.5 font-medium">Key</th>
+                    <th className="px-3 py-1.5 font-medium">Connection</th>
                     <th className="px-3 py-1.5 font-medium">Tool</th>
                     <th className="px-3 py-1.5 font-medium">Result</th>
                     <th className="px-3 py-1.5 font-medium">Duration</th>
@@ -467,23 +496,14 @@ export function McpTab({ tabActive }: { tabActive: boolean }) {
         existing={editing}
         tools={tools}
         url={info?.url ?? null}
-        defaultTables={createDefaultTables}
-        onCreate={async (req) => {
-          const created = await call(getBindings().createMcpKey(req));
-          setKeys((ks) => [...ks, created]);
-          return created;
-        }}
-        onUpdate={async (id, patch) => {
-          const updated = await call(getBindings().updateMcpKey(id, patch));
-          setKeys((ks) => ks.map((k) => (k.id === id ? updated : k)));
-          return updated;
-        }}
+        onCreate={createKey}
+        onUpdate={updateKey}
       />
 
       <Dialog open={deleting !== null} onOpenChange={(o) => !o && setDeleting(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Delete API key?</DialogTitle>
+            <DialogTitle>Revoke connection?</DialogTitle>
             <DialogDescription>
               Delete API key &ldquo;{deleting?.name}&rdquo;? Clients using it
               will lose access immediately.
@@ -494,7 +514,7 @@ export function McpTab({ tabActive }: { tabActive: boolean }) {
               Cancel
             </Button>
             <Button variant="destructive" onClick={() => void confirmDelete()} disabled={busy}>
-              Delete
+              Revoke
             </Button>
           </DialogFooter>
         </DialogContent>

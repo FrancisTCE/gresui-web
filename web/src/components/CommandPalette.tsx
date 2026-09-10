@@ -14,6 +14,7 @@ import {
   Plug,
   RefreshCw,
   Search,
+  Server,
   SquareTerminal,
   Sun,
   Table2,
@@ -67,16 +68,18 @@ export function CommandPalette({
   open,
   onOpenChange,
   onOpenSql,
-  onOpenMcp,
+  onOpenTableMcp,
+  onOpenMcpServer,
   onRefresh,
 }: {
   open: boolean;
   onOpenChange(open: boolean): void;
   onOpenSql(): void;
-  onOpenMcp(): void;
+  onOpenTableMcp(): void;
+  onOpenMcpServer(): void;
   onRefresh(): void;
 }) {
-  const { setActive, theme, setTheme, connStatus } = useAppStore();
+  const { setActive, theme, setTheme, connStatus, active } = useAppStore();
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
   const [tables, setTables] = useState<TableEntry[] | null>(null);
@@ -145,11 +148,20 @@ export function CommandPalette({
       run: onOpenSql,
     },
     {
-      id: "mcp",
-      label: "Open MCP settings",
-      hint: "Keys and tool scopes",
+      id: "table-mcp",
+      label: active
+        ? `MCP access for ${active.schema}.${active.table}`
+        : "MCP access for this table",
+      hint: "Which connections can read this relation",
       icon: Plug,
-      run: onOpenMcp,
+      run: onOpenTableMcp,
+    },
+    {
+      id: "mcp-server",
+      label: "Open MCP server settings",
+      hint: "The server and every connection to it",
+      icon: Server,
+      run: onOpenMcpServer,
     },
     {
       id: "refresh",
@@ -167,7 +179,7 @@ export function CommandPalette({
       icon: theme === "dark" ? Sun : Moon,
       run: () => setTheme(theme === "dark" ? "light" : "dark"),
     },
-  ], [onOpenSql, onOpenMcp, onRefresh, theme, setTheme]);
+  ], [onOpenSql, onOpenTableMcp, onOpenMcpServer, onRefresh, theme, setTheme, active]);
 
   const { tableItems, actionItems } = useMemo(() => {
     const q = query.trim();
