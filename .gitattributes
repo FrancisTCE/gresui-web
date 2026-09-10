@@ -1,0 +1,12 @@
+# Line endings are pinned so a formatter check means the same thing on every
+# machine. Without this, git hands a Windows checkout CRLF and a Linux one LF,
+# and `biome format --check` fails on one of them for reasons that have
+# nothing to do with the code.
+* text=auto eol=lf
+
+# Binary — never touch, never diff.
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
