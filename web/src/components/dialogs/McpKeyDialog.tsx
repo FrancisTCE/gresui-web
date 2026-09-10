@@ -1,5 +1,6 @@
 // McpKeyDialog — create/edit an MCP API key: name, tool scopes, optional
-// "schema.table" allowlist. Create success swaps the body to a one-time view
+// table allowlist (picked from the catalog, see TablePicker). Create success
+// swaps the body to a one-time view
 // of the generated key. The raw value stays recoverable in the UI (Show/Hide
 // in the key list) — the frontend is the app's own trust boundary, same as
 // connection passwords.
@@ -18,9 +19,8 @@ import {
 } from "@/components/ui/dialog.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Label } from "@/components/ui/label.tsx";
-import { cn } from "@/lib/utils.ts";
-
-const TABLE_RE = /^(?:[A-Za-z_][A-Za-z0-9_]*\.)?[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$/;
+import { TablePicker } from "@/components/mcp/TablePicker.tsx";
+import { useAppStore } from "@/AppStore.tsx";
 
 export function configSnippet(url: string, key: string): string {
   return JSON.stringify(
@@ -59,17 +59,17 @@ export function McpKeyDialog({
   onCreate(req: { name: string; scopes: string[]; tables: string[] }): Promise<McpKeyInfo>;
   onUpdate(id: string, patch: { name?: string; scopes?: string[]; tables?: string[] }): Promise<McpKeyInfo>;
 }) {
+  const { connStatus } = useAppStore();
   const [name, setName] = useState("");
   const [scopes, setScopes] = useState<Record<string, boolean>>({});
-  const [tablesText, setTablesText] = useState("");
-  const [tablesError, setTablesError] = useState("");
+  const [tables, setTables] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [created, setCreated] = useState<McpKeyInfo | null>(null);
   const [copied, setCopied] = useState<"" | "key" | "config">("");
 
   const sortedTools = useMemo(
-    () => [...tools].sort((a, b) => a.name.localeCompare(b.name)),
+    () => tools.toSorted((a, b) => a.name.localeCompare(b.name)),
     [tools],
   );
 
@@ -81,7 +81,6 @@ export function McpKeyDialog({
   useEffect(() => {
     if (open) {
       setError("");
-      setTablesError("");
       setBusy(false);
       setCreated(null);
       setCopied("");
@@ -90,11 +89,11 @@ export function McpKeyDialog({
         const init: Record<string, boolean> = {};
         for (const t of tools) init[t.name] = existing.scopes.includes(t.name);
         setScopes(init);
-        setTablesText(existing.tables.join(", "));
+        setTables(existing.tables);
       } else {
         setName("");
         setScopes({});
-        setTablesText(defaultTablesKey.split(",").filter(Boolean).join(", "));
+        setTables(defaultTablesKey.split(",").filter(Boolean));
       }
     }
   }, [open, mode, existing, tools, defaultTablesKey]);
@@ -108,31 +107,16 @@ export function McpKeyDialog({
     setScopes(next);
   }
 
-  function parseTables(): string[] {
-    return tablesText
-      .split(",")
-      .map((t) => t.trim())
-      .filter((t) => t !== "");
-  }
-
-  function validateTables(): boolean {
-    const entries = parseTables();
-    for (const t of entries) {
-      if (!TABLE_RE.test(t)) {
-        setTablesError(`"${t}" is not a valid schema.table or db.schema.table`);
-        return false;
-      }
-    }
-    setTablesError("");
-    return true;
-  }
-
   async function submit(): Promise<void> {
-    if (!valid || !validateTables()) return;
+    if (!valid) return;
     setBusy(true);
     setError("");
     try {
-      const req = { name: name.trim(), scopes: sortedTools.filter((t) => scopes[t.name]).map((t) => t.name), tables: parseTables() };
+      const req = {
+        name: name.trim(),
+        scopes: sortedTools.filter((t) => scopes[t.name]).map((t) => t.name),
+        tables,
+      };
       if (mode === "create") {
         setCreated(await onCreate(req));
       } else if (existing) {
@@ -193,7 +177,7 @@ export function McpKeyDialog({
               </div>
               {url ? (
                 <p className="text-xs text-muted">
-                  Add the config JSON to your MCP client (e.g. Claude Desktop's
+                  Add the config JSON to your MCP client (e.g. Claude Desktop&rsquo;s
                   claude_desktop_config.json) and restart the client.
                 </p>
               ) : null}
@@ -263,29 +247,13 @@ export function McpKeyDialog({
                 </div>
               </fieldset>
 
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="mcp-key-tables">
-                  Restrict to tables (optional)
-                </Label>
-                <Input
-                  id="mcp-key-tables"
-                  value={tablesText}
-                  onChange={(e) => {
-                    setTablesText(e.target.value);
-                    if (tablesError) setTablesError("");
-                  }}
-                  onBlur={validateTables}
-                  placeholder="public.users, analytics.public.orders"
-                  className={cn("font-mono text-xs", tablesError && "border-danger")}
-                />
-                {tablesError ? (
-                  <p className="text-xs text-danger-text">{tablesError}</p>
-                ) : (
-                  <p className="text-xs text-muted">
-                    Comma-separated schema.table or db.schema.table names; no database prefix = the anchor database; empty = all tables.
-                  </p>
-                )}
-              </div>
+              <TablePicker
+                id="mcp-key-tables"
+                value={tables}
+                onChange={setTables}
+                anchorDb={connStatus.database ?? ""}
+                active={open}
+              />
             </div>
             {error ? (
               <div

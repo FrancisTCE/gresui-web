@@ -32,9 +32,9 @@ import {
 import type { RelationKind } from "../../../shared/types.ts";
 import { useAppStore, type ActiveTarget } from "@/AppStore.tsx";
 import { Kbd } from "@/components/ui/kbd.tsx";
+import { crawlCatalog, type CatalogTable } from "@/lib/catalog.ts";
 import { fuzzyMatch, splitMatch } from "@/lib/fuzzy.ts";
 import { formatCompact } from "@/lib/format.ts";
-import { call, getBindings } from "@/lib/rpc.ts";
 import { cn } from "@/lib/utils.ts";
 
 export interface PaletteAction {
@@ -45,15 +45,8 @@ export interface PaletteAction {
   run(): void;
 }
 
-interface TableEntry {
-  database: string;
-  schema: string;
-  table: string;
-  kind: RelationKind;
-  rowEstimate: number | null;
-  /** "schema.table" — what the user actually types at. */
-  search: string;
-}
+/** The catalog row, named locally for what the palette does with it. */
+type TableEntry = CatalogTable;
 
 type Item =
   | { type: "table"; key: string; entry: TableEntry; positions: number[] }
@@ -90,37 +83,7 @@ export function CommandPalette({
   const loadTables = useCallback(async (): Promise<void> => {
     setLoading(true);
     try {
-      const b = getBindings();
-      const out: TableEntry[] = [];
-      const dbs = await call(b.listDatabases());
-      // Databases in parallel, schemas within a database in parallel: on a
-      // server with a dozen schemas this is the difference between the
-      // palette being usable on first keystroke and not.
-      await Promise.all(
-        dbs.map(async (database) => {
-          const schemas = await call(b.listSchemas(database)).catch(() => []);
-          await Promise.all(
-            schemas.map(async (schema) => {
-              const rels = await call(b.listRelations(database, schema))
-                .catch(() => []);
-              for (const r of rels) {
-                out.push({
-                  database,
-                  schema,
-                  table: r.name,
-                  kind: r.kind,
-                  rowEstimate: r.rowEstimate,
-                  search: `${schema}.${r.name}`,
-                });
-              }
-            }),
-          );
-        }),
-      );
-      out.sort((a, b2) => a.search.localeCompare(b2.search));
-      setTables(out);
-    } catch {
-      setTables([]); // no catalog — actions still work
+      setTables(await crawlCatalog());
     } finally {
       setLoading(false);
     }
@@ -137,6 +100,8 @@ export function CommandPalette({
   useEffect(() => {
     setTables(null);
     setRecent([]);
+    // The three fields are the trigger; the body reads none of them.
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies
   }, [connStatus.connected, connStatus.host, connStatus.database]);
 
   const actions = useMemo<PaletteAction[]>(() => [
@@ -270,6 +235,9 @@ export function CommandPalette({
     listRef.current
       ?.querySelector<HTMLElement>('[data-active="true"]')
       ?.scrollIntoView({ block: "nearest" });
+    // `items` is here so a changed list re-runs the scroll, not because the
+    // body reads it.
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies
   }, [cursor, items]);
 
   function choose(item: Item): void {
@@ -351,7 +319,7 @@ export function CommandPalette({
               }}
               placeholder="Search tables and actions…"
               aria-label="Search tables and actions"
-              className="h-12 min-w-0 flex-1 bg-transparent text-[15px] text-foreground outline-none placeholder:text-subtle"
+              className="h-12 min-w-0 flex-1 rounded-lg bg-transparent text-[15px] text-foreground placeholder:text-subtle focus-visible:-outline-offset-2"
             />
             <Kbd className="shrink-0">Esc</Kbd>
           </div>
@@ -535,6 +503,9 @@ function Marked({ text, positions }: { text: string; positions: number[] }) {
     <>
       {splitMatch(text, positions).map((run, i) => (
         <span
+          // Positional slices of one string: the index is what identifies a
+          // run, and two runs can hold the same text.
+          // oxlint-disable-next-line react/no-array-index-key
           key={i}
           className={run.hit ? "font-semibold text-accent-text" : undefined}
         >

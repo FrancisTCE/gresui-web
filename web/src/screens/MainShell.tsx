@@ -77,6 +77,10 @@ export function MainShell() {
   // clicking a relation opens its Table tab
   useEffect(() => {
     if (active) setTab("table");
+    // Keyed on the table name alone: switching relations opens the Table tab,
+    // but a change to any other field of `active` must not yank the user out
+    // of the tab they are in.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-effect-dependencies
   }, [active?.table]);
 
   // Global shortcuts. Typing in an input must never be swallowed, so the

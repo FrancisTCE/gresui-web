@@ -9,6 +9,7 @@
 import {
   ArrowUpRight,
   Check,
+  EyeOff,
   Minus,
   Plug,
   Plus,
@@ -18,7 +19,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import type { McpKeyInfo } from "../../../../shared/types.ts";
+import type { McpKeyInfo, McpLens } from "../../../../shared/types.ts";
 import { useAppStore } from "@/AppStore.tsx";
 import { useMcpStore } from "@/McpStore.tsx";
 import { NoTableSelected } from "@/screens/MainShell.tsx";
@@ -34,8 +35,12 @@ import {
 } from "@/components/ui/dialog.tsx";
 import { McpKeyDialog } from "@/components/dialogs/McpKeyDialog.tsx";
 import { ScopeHeader, ServerStateDot } from "@/components/mcp/McpShared.tsx";
+import { ActivityFeed, LensSummary } from "@/components/mcp/ActivityFeed.tsx";
+import { LensDialog } from "@/components/mcp/LensDialog.tsx";
 import {
   keyCoverage,
+  lensFor,
+  qualifiedTable,
   tableEntry,
   withTable,
   withoutTable,
@@ -51,19 +56,35 @@ export function TableMcpTab({
   onOpenServer(): void;
 }) {
   const { active, connStatus, toastStore } = useAppStore();
-  const { server, keys, tools, loading, refresh, setEnabled, createKey, updateKey, deleteKey } =
-    useMcpStore();
+  const {
+    server,
+    keys,
+    tools,
+    loading,
+    refresh,
+    setEnabled,
+    createKey,
+    updateKey,
+    deleteKey,
+    setLens,
+    clearLens,
+  } = useMcpStore();
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   /** Set when unexposing would empty a key's allowlist — an empty allowlist
    * means "all tables", so the safe answer is to revoke the key instead. */
   const [lastTable, setLastTable] = useState<McpKeyInfo | null>(null);
+  /** The key whose lens on this table is being edited. */
+  const [lensKey, setLensKey] = useState<McpKeyInfo | null>(null);
 
   useEffect(() => {
     if (tabActive) void refresh();
   }, [tabActive, refresh]);
 
   if (!active) return <NoTableSelected />;
+  // The guard above narrows `active` for the JSX, but not for the hoisted
+  // function declarations below; a const carries the narrowing to them.
+  const target = active;
 
   const anchorDb = connStatus.database ?? active.database;
   const label = `${active.schema}.${active.table}`;
@@ -72,6 +93,7 @@ export function TableMcpTab({
   const scored = keys.map((k) => ({
     key: k,
     coverage: keyCoverage(k, active, anchorDb),
+    lens: lensFor(k, active, anchorDb),
   }));
   const exposed = scored.filter((s) => s.coverage !== null);
   const others = scored.filter((s) => s.coverage === null);
@@ -79,11 +101,14 @@ export function TableMcpTab({
   const inheritedCount = exposed.length - explicitCount;
   const serverOn = server?.enabled ?? false;
   const live = serverOn && exposed.length > 0;
+  const lensedCount = exposed.filter((s2) => s2.lens !== null).length;
+  /** Canonical name the activity feed and the grid both key rows by. */
+  const targetRef = qualifiedTable(active);
 
   async function expose(k: McpKeyInfo): Promise<void> {
     setBusyKey(k.id);
     try {
-      await updateKey(k.id, { tables: withTable(k, active!, anchorDb) });
+      await updateKey(k.id, { tables: withTable(k, target, anchorDb) });
       toastStore.toast({ title: `${label} exposed to "${k.name}"` });
     } catch (e) {
       toastStore.toast({
@@ -97,7 +122,7 @@ export function TableMcpTab({
   }
 
   async function unexpose(k: McpKeyInfo): Promise<void> {
-    const next = withoutTable(k, active!, anchorDb);
+    const next = withoutTable(k, target, anchorDb);
     if (next.length === 0) {
       setLastTable(k); // would widen the key to every table — ask first
       return;
@@ -189,6 +214,12 @@ export function TableMcpTab({
             {inheritedCount > 0 ? (
               <Badge variant="outline">{inheritedCount} via all-tables key</Badge>
             ) : null}
+            {lensedCount > 0 ? (
+              <Badge variant="secondary" className="gap-1">
+                <EyeOff />
+                {lensedCount} through a lens
+              </Badge>
+            ) : null}
           </span>
         ) : null}
         {!serverOn ? (
@@ -233,14 +264,16 @@ export function TableMcpTab({
         </p>
       ) : (
         <div className="mb-6 space-y-2">
-          {exposed.map(({ key: k, coverage }) => (
+          {exposed.map(({ key: k, coverage, lens }) => (
             <KeyRow
               key={k.id}
               k={k}
               coverage={coverage}
+              lens={lens}
               busy={busyKey === k.id}
               onOpenServer={onOpenServer}
               onToggle={() => void unexpose(k)}
+              onEditLens={() => setLensKey(k)}
             />
           ))}
         </div>
@@ -253,11 +286,12 @@ export function TableMcpTab({
             Other connections ({others.length})
           </h3>
           <div className="space-y-2">
-            {others.map(({ key: k, coverage }) => (
+            {others.map(({ key: k, coverage, lens }) => (
               <KeyRow
                 key={k.id}
                 k={k}
                 coverage={coverage}
+                lens={lens}
                 busy={busyKey === k.id}
                 onOpenServer={onOpenServer}
                 onToggle={() => void expose(k)}
@@ -265,6 +299,25 @@ export function TableMcpTab({
             ))}
           </div>
         </>
+      ) : null}
+
+      <div className="mt-6">
+        <ActivityFeed target={targetRef} />
+      </div>
+
+      {lensKey ? (
+        <LensDialog
+          open
+          onOpenChange={(o) => !o && setLensKey(null)}
+          keyInfo={lensKey}
+          tableRef={entry}
+          database={active.database}
+          schema={active.schema}
+          table={active.table}
+          existing={lensFor(lensKey, active, anchorDb)}
+          onSave={(lens) => setLens(lensKey.id, lens)}
+          onClear={() => clearLens(lensKey.id, entry)}
+        />
       ) : null}
 
       <McpKeyDialog
@@ -316,15 +369,20 @@ export function TableMcpTab({
 function KeyRow({
   k,
   coverage,
+  lens,
   busy,
   onToggle,
   onOpenServer,
+  onEditLens,
 }: {
   k: McpKeyInfo;
   coverage: Coverage;
+  lens: McpLens | null;
   busy: boolean;
   onToggle(): void;
   onOpenServer(): void;
+  /** Absent for keys that do not reach this table — there is nothing to lens. */
+  onEditLens?: (() => void) | undefined;
 }) {
   const inherited = coverage === "all";
   return (
@@ -374,8 +432,37 @@ function KeyRow({
           </Button>
         )}
       </div>
+      {onEditLens ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-muted">
+            Lens
+          </span>
+          <span className="min-w-0 text-[11px]">
+            {lens ? (
+              <LensSummary
+                hidden={lens.hiddenColumns}
+                filter={lens.rowFilter}
+              />
+            ) : (
+              <span className="text-muted">
+                whole row — every column, every row
+              </span>
+            )}
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="ml-auto"
+            onClick={onEditLens}
+            disabled={busy}
+          >
+            <EyeOff />
+            {lens ? "Edit lens" : "Add lens"}
+          </Button>
+        </div>
+      ) : null}
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        {[...k.scopes].sort().map((s) => (
+        {k.scopes.toSorted().map((s) => (
           <Badge key={s} variant="muted" className="font-mono">
             {s}
           </Badge>

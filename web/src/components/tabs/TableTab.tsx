@@ -9,6 +9,7 @@ import type {
   TableInfo,
 } from "../../../../shared/types.ts";
 import { useAppStore } from "@/AppStore.tsx";
+import { useMcpActivity } from "@/McpStore.tsx";
 import { ErrorBanner } from "@/components/ErrorBanner.tsx";
 import { NoTableSelected } from "@/screens/MainShell.tsx";
 import { InsertRowDialog } from "@/components/dialogs/InsertRowDialog.tsx";
@@ -27,6 +28,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.tsx";
+import { qualifiedTable } from "@/lib/mcp-scope.ts";
 import { call, getBindings } from "@/lib/rpc.ts";
 
 /** Identity of a row count: the relation plus the filter it was taken under. */
@@ -36,6 +38,9 @@ function countKey(target: string, filter: string): string {
 
 export function TableTab({ tabActive }: { tabActive: boolean }) {
   const { active, toastStore, setViewStatus } = useAppStore();
+  // Null when the MCP store is not mounted (no connection) — the grid simply
+  // does not flash then.
+  const mcpActivity = useMcpActivity();
 
   const [data, setData] = useState<BrowseResponse | null>(null);
   const [tableInfo, setTableInfo] = useState<TableInfo | null>(null);
@@ -222,7 +227,9 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
       const pkIdx = tableInfo.pkColumns.map((pk) =>
         data.columns.findIndex((c) => c.name === pk),
       );
-      const rows = [...selected].map((i) => pkIdx.map((j) => data!.rows[i][j] ?? null));
+      const rows = [...selected].map((i) =>
+        pkIdx.map((j) => data.rows[i]?.[j] ?? null)
+      );
       const n = await call(
         getBindings().deleteRows(
           active.database,
@@ -327,7 +334,7 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, selected, readOnly]);
+  }, [active, selected, readOnly, tabActive]);
 
   /** Row actions, rendered by FilterBar to the left of the pager. */
   function toolbar() {
@@ -385,6 +392,9 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
   }
 
   if (!active) return <NoTableSelected />;
+
+  // Rows an agent read from *this* relation in the last few seconds.
+  const agentRows = mcpActivity?.reads(qualifiedTable(active));
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -444,6 +454,7 @@ export function TableTab({ tabActive }: { tabActive: boolean }) {
             setPage(0);
             setSort(s);
           }}
+          agentRows={agentRows}
           onQuickFilter={quickFilter}
           onCommitCell={readOnly ? undefined : commitCell}
           selected={selected}
