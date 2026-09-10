@@ -1,17 +1,21 @@
 // App-wide state: settings, connection status, active table target, theme.
 import {
   createContext,
+  type ReactNode,
   useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
-  type ReactNode,
 } from "react";
-
-import type { ConnStatus, RelationKind, Settings } from "../../shared/types.ts";
 import { call, getBindings } from "@/lib/rpc.ts";
-import { createToastStore, ToastStoreContext, type ToastStore } from "@/lib/toast-store.ts";
+import {
+  createToastStore,
+  type ToastStore,
+  ToastStoreContext,
+} from "@/lib/toast-store.ts";
+import { ignoreError } from "../../shared/noop.ts";
+import type { ConnStatus, RelationKind, Settings } from "../../shared/types.ts";
 
 /** What the status bar shows about the view in front of the user. Published
  * by whichever tab is active; the shell only renders it. */
@@ -122,7 +126,7 @@ export function AppStoreProvider({
         applyTheme(t); // ahead of the state round-trip, so the click feels instant
         setCurSettings((s) => ({ ...s, theme: t }));
         try {
-          call(getBindings().setSettings({ theme: t })).catch(() => {});
+          call(getBindings().setSettings({ theme: t })).catch(ignoreError);
         } catch {
           // plain-browser mode: no bindings to persist to
         }

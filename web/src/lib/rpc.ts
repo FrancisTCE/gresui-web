@@ -16,7 +16,10 @@ let httpProxy: Bindings | undefined;
 function httpBindings(): Bindings {
   if (!httpProxy) {
     httpProxy = new Proxy({} as Bindings, {
-      get: (_t, method) => (...args: unknown[]) => rpc(String(method), args),
+      get:
+        (_t, method) =>
+        (...args: unknown[]) =>
+          rpc(String(method), args),
     });
   }
   return httpProxy;
@@ -39,8 +42,13 @@ async function rpc(method: string, args: unknown[]): Promise<unknown> {
       },
       body: JSON.stringify({ method, args }),
     });
-  } catch {
-    throw new Error("Cannot reach the gresui backend — is the server running?");
+  } catch (err) {
+    throw new Error(
+      "Cannot reach the gresui backend — is the server running?",
+      {
+        cause: err,
+      },
+    );
   }
   let body: { result?: unknown; error?: { name?: string; message?: string } };
   try {
@@ -54,7 +62,7 @@ async function rpc(method: string, args: unknown[]): Promise<unknown> {
     throw err;
   }
   if (!res.ok) {
-    throw new Error("gresui backend error (HTTP " + res.status + ")");
+    throw new Error(`gresui backend error (HTTP ${res.status})`);
   }
   return body.result;
 }

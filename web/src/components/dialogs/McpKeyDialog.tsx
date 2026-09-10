@@ -6,8 +6,8 @@
 // connection passwords.
 import { Check, Copy } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-
-import type { McpKeyInfo, McpToolInfo } from "../../../../shared/types.ts";
+import { useAppStore } from "@/AppStore.tsx";
+import { TablePicker } from "@/components/mcp/TablePicker.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import {
   Dialog,
@@ -19,8 +19,7 @@ import {
 } from "@/components/ui/dialog.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Label } from "@/components/ui/label.tsx";
-import { TablePicker } from "@/components/mcp/TablePicker.tsx";
-import { useAppStore } from "@/AppStore.tsx";
+import type { McpKeyInfo, McpToolInfo } from "../../../../shared/types.ts";
 
 export function configSnippet(url: string, key: string): string {
   return JSON.stringify(
@@ -56,8 +55,15 @@ export function McpKeyDialog({
   url: string | null;
   /** Create-mode seed for the tables restriction (contextual MCP scope). */
   defaultTables?: string[];
-  onCreate(req: { name: string; scopes: string[]; tables: string[] }): Promise<McpKeyInfo>;
-  onUpdate(id: string, patch: { name?: string; scopes?: string[]; tables?: string[] }): Promise<McpKeyInfo>;
+  onCreate(req: {
+    name: string;
+    scopes: string[];
+    tables: string[];
+  }): Promise<McpKeyInfo>;
+  onUpdate(
+    id: string,
+    patch: { name?: string; scopes?: string[]; tables?: string[] },
+  ): Promise<McpKeyInfo>;
 }) {
   const { connStatus } = useAppStore();
   const [name, setName] = useState("");
@@ -167,7 +173,9 @@ export function McpKeyDialog({
                 <Button
                   size="sm"
                   variant="secondary"
-                  onClick={() => url && void copy(configSnippet(url, created.key), "config")}
+                  onClick={() =>
+                    url && void copy(configSnippet(url, created.key), "config")
+                  }
                   disabled={!url}
                   title={url ? undefined : "Enable the MCP server first"}
                 >
@@ -177,8 +185,9 @@ export function McpKeyDialog({
               </div>
               {url ? (
                 <p className="text-xs text-muted">
-                  Add the config JSON to your MCP client (e.g. Claude Desktop&rsquo;s
-                  claude_desktop_config.json) and restart the client.
+                  Add the config JSON to your MCP client (e.g. Claude
+                  Desktop&rsquo;s claude_desktop_config.json) and restart the
+                  client.
                 </p>
               ) : null}
             </div>
@@ -189,7 +198,11 @@ export function McpKeyDialog({
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle>{mode === "create" ? "New API key" : `Edit API key "${existing?.name}"`}</DialogTitle>
+              <DialogTitle>
+                {mode === "create"
+                  ? "New API key"
+                  : `Edit API key "${existing?.name}"`}
+              </DialogTitle>
               <DialogDescription>
                 Each key is scoped to a subset of the MCP tools and can be
                 restricted to specific tables.
@@ -230,7 +243,10 @@ export function McpKeyDialog({
                         type="checkbox"
                         checked={scopes[t.name] ?? false}
                         onChange={(e) =>
-                          setScopes((s) => ({ ...s, [t.name]: e.target.checked }))
+                          setScopes((s) => ({
+                            ...s,
+                            [t.name]: e.target.checked,
+                          }))
                         }
                         className="mt-0.5 size-4 accent-[var(--accent)]"
                       />
@@ -264,15 +280,19 @@ export function McpKeyDialog({
               </div>
             ) : null}
             <DialogFooter>
-              <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>
+              <Button
+                variant="secondary"
+                onClick={() => onOpenChange(false)}
+                disabled={busy}
+              >
                 Cancel
               </Button>
               <Button onClick={() => void submit()} disabled={busy || !valid}>
                 {busy
                   ? "Saving…"
                   : mode === "create"
-                  ? "Create key"
-                  : "Save changes"}
+                    ? "Create key"
+                    : "Save changes"}
               </Button>
             </DialogFooter>
           </>

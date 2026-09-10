@@ -1,10 +1,9 @@
 // RowJsonPane — bottom panel with pretty-printed JSON for the selected row.
 import { ChevronDown, Copy } from "lucide-react";
 import { useRef, useState } from "react";
-
+import { cn } from "@/lib/utils.ts";
 import type { CellValue, Row } from "../../../../shared/types.ts";
 import type { GridColumn } from "./DataGrid.tsx";
-import { cn } from "@/lib/utils.ts";
 
 /** Vertical space the grid keeps no matter how tall the pane is asked to be. */
 const GRID_RESERVE_PX = 140;
@@ -36,9 +35,8 @@ export function RowJsonPane({
     // Mirrors GRID_RESERVE_PX in the style below so the handle keeps tracking
     // the pointer right up to the cap instead of stopping under it.
     const avail = root.current?.parentElement?.clientHeight ?? 0;
-    const max = avail > 0
-      ? Math.max(120, Math.min(600, avail - GRID_RESERVE_PX))
-      : 600;
+    const max =
+      avail > 0 ? Math.max(120, Math.min(600, avail - GRID_RESERVE_PX)) : 600;
     const onMove = (ev: PointerEvent): void => {
       onResize(Math.min(max, Math.max(120, startH + (startY - ev.clientY))));
     };
@@ -72,9 +70,11 @@ export function RowJsonPane({
       // The cap is what keeps the grid on screen when the column shrinks
       // (a shorter window, an error banner) after the height was chosen: the
       // stored height would otherwise starve a flex-1 sibling down to nothing.
-      style={open
-        ? { height, maxHeight: `calc(100% - ${GRID_RESERVE_PX}px)` }
-        : undefined}
+      style={
+        open
+          ? { height, maxHeight: `calc(100% - ${GRID_RESERVE_PX}px)` }
+          : undefined
+      }
     >
       {open ? (
         <>
@@ -100,7 +100,9 @@ export function RowJsonPane({
               <button
                 type="button"
                 onClick={() => {
-                  void navigator.clipboard.writeText(JSON.stringify(obj, null, 2));
+                  void navigator.clipboard.writeText(
+                    JSON.stringify(obj, null, 2),
+                  );
                 }}
                 className="flex items-center gap-1 text-xs text-muted hover:text-foreground"
                 title="Copy JSON"

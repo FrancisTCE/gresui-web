@@ -59,7 +59,10 @@ function editorTheme(dark: boolean) {
         backgroundColor: "var(--accent-soft)",
         outline: "1px solid var(--accent)",
       },
-      ".cm-cursor": { borderLeftColor: "var(--accent)", borderLeftWidth: "2px" },
+      ".cm-cursor": {
+        borderLeftColor: "var(--accent)",
+        borderLeftWidth: "2px",
+      },
       ".cm-selectionBackground": { backgroundColor: "var(--selection)" },
       "&.cm-focused .cm-selectionBackground": {
         backgroundColor: "var(--selection)",
@@ -87,18 +90,27 @@ export function SqlEditor({
       syntaxHighlighting(highlight),
       Prec.high(
         keymap.of([
-          { key: "Mod-Enter", run: () => (onRun(), true) },
-          { key: "Shift-Enter", run: () => (onRun(), true) },
+          {
+            key: "Mod-Enter",
+            run: () => {
+              onRun();
+              return true;
+            },
+          },
+          {
+            key: "Shift-Enter",
+            run: () => {
+              onRun();
+              return true;
+            },
+          },
         ]),
       ),
     ],
     [onRun, theme],
   );
 
-  const handleChange = useCallback(
-    (v: string) => onChange(v),
-    [onChange],
-  );
+  const handleChange = useCallback((v: string) => onChange(v), [onChange]);
 
   return (
     <div className="h-full w-full overflow-hidden">

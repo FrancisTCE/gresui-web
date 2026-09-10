@@ -9,14 +9,22 @@
 // that does not exist yet, or a key edited while disconnected — so a
 // hand-written entry is still possible, still validated, and shown as a chip
 // like any other.
-import { AlertTriangle, Check, Database, Loader2, Plus, Search, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  Database,
+  Loader2,
+  Plus,
+  Search,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Label } from "@/components/ui/label.tsx";
-import { crawlCatalog, type CatalogTable } from "@/lib/catalog.ts";
+import { type CatalogTable, crawlCatalog } from "@/lib/catalog.ts";
 import { canonicalTable, tableEntry } from "@/lib/mcp-scope.ts";
 import { cn } from "@/lib/utils.ts";
 
@@ -65,12 +73,14 @@ export function TablePicker({
   const matches = useMemo(() => {
     if (!catalog) return [];
     const q = query.trim().toLowerCase();
-    const hits = q === ""
-      ? catalog
-      : catalog.filter((t) =>
-        t.search.toLowerCase().includes(q) ||
-        t.database.toLowerCase().includes(q)
-      );
+    const hits =
+      q === ""
+        ? catalog
+        : catalog.filter(
+            (t) =>
+              t.search.toLowerCase().includes(q) ||
+              t.database.toLowerCase().includes(q),
+          );
     return hits.slice(0, 400); // a 40k-relation database must not freeze the dialog
   }, [catalog, query]);
 
@@ -114,7 +124,8 @@ export function TablePicker({
 
   // Offer the escape hatch only when the search finds nothing but does look
   // like a relation name — otherwise it is just noise under the box.
-  const canAddManual = query.trim() !== "" &&
+  const canAddManual =
+    query.trim() !== "" &&
     matches.length === 0 &&
     !chosen.has(canonicalTable(query.trim(), anchorDb));
 
@@ -134,9 +145,7 @@ export function TablePicker({
           {value.map((t) => (
             <Badge
               key={t}
-              variant={
-                unknown.includes(t) ? "secondary" : "default"
-              }
+              variant={unknown.includes(t) ? "secondary" : "default"}
               className="gap-1 pr-1 font-mono"
             >
               {unknown.includes(t) ? (
@@ -231,7 +240,9 @@ export function TablePicker({
                     {t.database}
                   </Badge>
                 )}
-                {on ? <Check className="size-3.5 shrink-0 text-accent-text" /> : null}
+                {on ? (
+                  <Check className="size-3.5 shrink-0 text-accent-text" />
+                ) : null}
               </label>
             );
           })

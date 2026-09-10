@@ -15,6 +15,6 @@ const SEP = String.fromCodePoint(0);
  * and the literal text "null" cannot produce the same key. */
 export function rowKey(values: CellValue[]): string {
   return values
-    .map((v) => (v === null ? SEP + "n" : SEP + "s" + String(v)))
+    .map((v) => (v === null ? `${SEP}n` : `${SEP}s${String(v)}`))
     .join("");
 }

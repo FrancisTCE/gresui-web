@@ -19,6 +19,8 @@ import { z } from "zod";
 
 // Node requires the import attribute for JSON; Bun accepted a bare specifier.
 import pkg from "../package.json" with { type: "json" };
+import { ignoreError } from "../shared/noop.ts";
+import { rowKey } from "../shared/row-key.ts";
 import type {
   BrowseRequest,
   ConnStatus,
@@ -26,11 +28,10 @@ import type {
   McpLens,
   McpServerInfo,
 } from "../shared/types.ts";
-import { rowKey } from "../shared/row-key.ts";
 import * as config from "./config.ts";
 import * as data from "./data.ts";
 import * as events from "./events.ts";
-import { serve, type Listener } from "./http.ts";
+import { type Listener, serve } from "./http.ts";
 import * as meta from "./meta.ts";
 import type { PgSession } from "./pg.ts";
 
@@ -80,7 +81,8 @@ export interface McpTool {
 export const MCP_TOOLS: McpTool[] = [
   {
     name: "list_schemas",
-    description: "List all non-system schemas in the connected database (default: anchor).",
+    description:
+      "List all non-system schemas in the connected database (default: anchor).",
     inputSchema: { db: z.string().optional() },
     run: async (args, ctx, _key) => {
       const db = args.db !== undefined ? String(args.db) : undefined;
@@ -98,21 +100,25 @@ export const MCP_TOOLS: McpTool[] = [
       const schema = String(args.schema);
       const sess = await ctx.getSession(db);
       const rels = await meta.listRelations(sess, schema);
-      return rels.filter((r) =>
-        allows(key, ctx, db, schema, r.name)
-      );
+      return rels.filter((r) => allows(key, ctx, db, schema, r.name));
     },
   },
   {
     name: "list_databases",
-    description: "List the databases reachable through this connection (anchor first, then bundled).",
+    description:
+      "List the databases reachable through this connection (anchor first, then bundled).",
     inputSchema: {},
     run: (_args, ctx, _key) => Promise.resolve(ctx.getDatabases()),
   },
   {
     name: "get_table",
-    description: "Describe a table: columns, primary key columns, row estimate.",
-    inputSchema: { db: z.string().optional(), schema: z.string(), table: z.string() },
+    description:
+      "Describe a table: columns, primary key columns, row estimate.",
+    inputSchema: {
+      db: z.string().optional(),
+      schema: z.string(),
+      table: z.string(),
+    },
     run: async (args, ctx, key, trace) => {
       const { db, schema, table, lens } = resolve(args, ctx, key, trace);
       const sess = await ctx.getSession(db);
@@ -131,16 +137,18 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "get_rows",
     description:
-      "Fetch rows from a table. `where` is raw SQL (same trust level as the filter bar in gresui) — e.g. \"id > 100\". Result rows are arrays aligned with `columns`; `total` counts matching rows, but is a planner estimate when `estimated` is true (large relations — call row_count for an exact figure); `truncated` is true when more rows match than this page returns (use `offset` to page further).",
+      'Fetch rows from a table. `where` is raw SQL (same trust level as the filter bar in gresui) — e.g. "id > 100". Result rows are arrays aligned with `columns`; `total` counts matching rows, but is a planner estimate when `estimated` is true (large relations — call row_count for an exact figure); `truncated` is true when more rows match than this page returns (use `offset` to page further).',
     inputSchema: {
       db: z.string().optional(),
       schema: z.string(),
       table: z.string(),
       where: z.string().optional(),
-      orderBy: z.object({
-        column: z.string(),
-        dir: z.enum(["asc", "desc"]),
-      }).optional(),
+      orderBy: z
+        .object({
+          column: z.string(),
+          dir: z.enum(["asc", "desc"]),
+        })
+        .optional(),
       limit: z.number().int().min(1).max(1000).default(50),
       offset: z.number().int().min(0).default(0),
     },
@@ -152,7 +160,9 @@ export const MCP_TOOLS: McpTool[] = [
         schema,
         table,
         where: typeof args.where === "string" ? args.where : undefined,
-        orderBy: args.orderBy as { column: string; dir: "asc" | "desc" } | undefined,
+        orderBy: args.orderBy as
+          | { column: string; dir: "asc" | "desc" }
+          | undefined,
         limit: Number(args.limit ?? 50),
         offset,
         lens: await browseLens(sess, schema, table, lens),
@@ -163,9 +173,10 @@ export const MCP_TOOLS: McpTool[] = [
       const pks = await meta.listPkColumns(sess, schema, table);
       const idx = pks.map((pk) => res.columns.findIndex((c) => c.name === pk));
       trace.rowCount = res.rows.length;
-      trace.rowKeys = pks.length > 0 && idx.every((i) => i >= 0)
-        ? res.rows.map((r) => rowKey(idx.map((i) => r[i] ?? null)))
-        : null;
+      trace.rowKeys =
+        pks.length > 0 && idx.every((i) => i >= 0)
+          ? res.rows.map((r) => rowKey(idx.map((i) => r[i] ?? null)))
+          : null;
       return {
         ...res,
         truncated: offset + res.rows.length < res.total,
@@ -201,7 +212,11 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "list_indexes",
     description: "List indexes on a table with their definitions.",
-    inputSchema: { db: z.string().optional(), schema: z.string(), table: z.string() },
+    inputSchema: {
+      db: z.string().optional(),
+      schema: z.string(),
+      table: z.string(),
+    },
     run: async (args, ctx, key, trace) => {
       const { db, schema, table, lens } = resolve(args, ctx, key, trace);
       const sess = await ctx.getSession(db);
@@ -209,8 +224,9 @@ export const MCP_TOOLS: McpTool[] = [
       if (!lens || lens.hiddenColumns.length === 0) return indexes;
       // An index definition spells out its columns, so returning one that
       // covers a hidden column would name the column the lens just withheld.
-      return indexes.filter((i) =>
-        !lens.hiddenColumns.some((c) => definitionMentions(i.definition, c))
+      return indexes.filter(
+        (i) =>
+          !lens.hiddenColumns.some((c) => definitionMentions(i.definition, c)),
       );
     },
   },
@@ -230,7 +246,8 @@ const MCP_TOOL_NAMES: Record<string, true> = Object.fromEntries(
 
 // --- validation (called by the bindings before config writes) ----------------
 
-const TABLE_RE = /^(?:[A-Za-z_][A-Za-z0-9_]*\.)?[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$/;
+const TABLE_RE =
+  /^(?:[A-Za-z_][A-Za-z0-9_]*\.)?[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$/;
 
 /** Validate only the fields that are defined; throws Error with a specific
  * message. Scopes must be non-empty and known; tables entries must match
@@ -295,7 +312,9 @@ export function validateMcpLens(lens: {
     throw new Error("lens row filter is too long (4000 characters max)");
   }
   if (lens.rowFilter.includes(";")) {
-    throw new Error("lens row filter must be a single boolean expression (no \";\")");
+    throw new Error(
+      'lens row filter must be a single boolean expression (no ";")',
+    );
   }
 }
 
@@ -306,17 +325,25 @@ export function validateMcpLens(lens: {
  * to be recognized, and the bare one on identifier boundaries: a hidden
  * `name` must not be "found" inside `full_name`, and must not be missed
  * inside `(name)`. */
-export function definitionMentions(definition: string, column: string): boolean {
-  if (definition.includes('"' + column.replaceAll('"', '""') + '"')) return true;
-  const escaped = column.replaceAll(/[$()*+.?[\\\]^{|}]/g, (m) => "\\" + m);
-  return new RegExp(`(^|[^A-Za-z0-9_$])${escaped}([^A-Za-z0-9_$]|$)`)
-    .test(definition);
+export function definitionMentions(
+  definition: string,
+  column: string,
+): boolean {
+  if (definition.includes(`"${column.replaceAll('"', '""')}"`)) return true;
+  const escaped = column.replaceAll(/[$()*+.?[\\\]^{|}]/g, (m) => `\\${m}`);
+  return new RegExp(`(^|[^A-Za-z0-9_$])${escaped}([^A-Za-z0-9_$]|$)`).test(
+    definition,
+  );
 }
 
 // --- table gate ---------------------------------------------------------------
 
 /** Allowlist key: unqualified entries mean the anchor database. */
-function qualify(db: string | undefined, schema: string, table: string): string {
+function qualify(
+  db: string | undefined,
+  schema: string,
+  table: string,
+): string {
   return db ? `${db}.${schema}.${table}` : `${schema}.${table}`;
 }
 
@@ -377,7 +404,12 @@ function resolve(
   ctx: Ctx,
   key: McpKeyInfo,
   trace: Trace,
-): { db: string | undefined; schema: string; table: string; lens: McpLens | null } {
+): {
+  db: string | undefined;
+  schema: string;
+  table: string;
+  lens: McpLens | null;
+} {
   const db = args.db !== undefined ? String(args.db) : undefined;
   const schema = String(args.schema);
   const table = String(args.table);
@@ -495,7 +527,7 @@ export async function handleMcp(req: Request, ctx: Ctx): Promise<Response> {
     console.warn("mcp: unauthorized request");
     return mcpError(401, -32001, "unauthorized");
   }
-  void config.touchMcpKey(keyInfo.id).catch(() => {});
+  void config.touchMcpKey(keyInfo.id).catch(ignoreError);
 
   // Per-request, stateless server (official example pattern): register only
   // the key's scoped tools, so tools/list shows exactly what the key may call.
@@ -516,24 +548,30 @@ export async function handleMcp(req: Request, ctx: Ctx): Promise<Response> {
           // Recording must never delay or fail the agent's reply: the await
           // is deliberately not on the response path, and the publish is
           // chained off the write so the feed shows the row that was stored.
-          void config.recordMcpUsage({
-            keyId: keyInfo.id,
-            tool: tool.name,
-            ok,
-            durationMs: Math.round(performance.now() - t0),
-            target: trace.target,
-            args: args as Record<string, unknown>,
-            rowCount: trace.rowCount,
-            rowKeys: trace.rowKeys,
-            lens: trace.lens,
-            error,
-          })
+          void config
+            .recordMcpUsage({
+              keyId: keyInfo.id,
+              tool: tool.name,
+              ok,
+              durationMs: Math.round(performance.now() - t0),
+              target: trace.target,
+              args: args as Record<string, unknown>,
+              rowCount: trace.rowCount,
+              rowKeys: trace.rowKeys,
+              lens: trace.lens,
+              error,
+            })
             .then((entry) => events.publish({ type: "mcp-activity", entry }))
-            .catch(() => {});
+            .catch(ignoreError);
         };
         try {
           const text = JSON.stringify(
-            await tool.run(args as Record<string, unknown>, ctx, keyInfo, trace),
+            await tool.run(
+              args as Record<string, unknown>,
+              ctx,
+              keyInfo,
+              trace,
+            ),
           );
           audit(true, null);
           return { content: [{ type: "text" as const, text }] };

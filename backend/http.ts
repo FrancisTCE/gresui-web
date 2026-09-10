@@ -8,8 +8,13 @@
 // RPC call or a file read off disk, and buffering keeps the adapter free of
 // half-duplex plumbing.
 
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
 import type { AddressInfo } from "node:net";
+import { ignoreError } from "../shared/noop.ts";
 
 /** Hard ceiling on a request body, before any route-level limit. */
 const MAX_BODY = 8 * 1024 * 1024;
@@ -45,9 +50,16 @@ function readBody(req: IncomingMessage): Promise<Buffer> {
   });
 }
 
-function toRequest(req: IncomingMessage, fallbackHost: string, body: Buffer): Request {
+function toRequest(
+  req: IncomingMessage,
+  fallbackHost: string,
+  body: Buffer,
+): Request {
   // Loopback-only server: the Host header is the app's own origin.
-  const url = new URL(req.url ?? "/", `http://${req.headers.host ?? fallbackHost}`);
+  const url = new URL(
+    req.url ?? "/",
+    `http://${req.headers.host ?? fallbackHost}`,
+  );
   const headers = new Headers();
   for (const [name, value] of Object.entries(req.headers)) {
     if (value === undefined) continue;
@@ -76,7 +88,10 @@ async function writeResponse(res: ServerResponse, r: Response): Promise<void> {
 
   // An event stream is the one route that must not be buffered: its whole
   // point is that the first chunk arrives now and the connection stays open.
-  if (r.body && (r.headers.get("content-type") ?? "").includes("text/event-stream")) {
+  if (
+    r.body &&
+    (r.headers.get("content-type") ?? "").includes("text/event-stream")
+  ) {
     await pipeStream(res, r.status, r.body, headers);
     return;
   }
@@ -105,7 +120,7 @@ async function pipeStream(
   const stop = (): void => {
     if (!open) return;
     open = false;
-    void reader.cancel().catch(() => {});
+    void reader.cancel().catch(ignoreError);
   };
   // The client navigating away or closing the tab lands here; cancelling the
   // reader is what lets the route release its subscription.
@@ -114,7 +129,6 @@ async function pipeStream(
   try {
     // `open` is cleared by stop(), from the "close" handler above — which a
     // linter reading only this loop body cannot see.
-    // oxlint-disable-next-line no-unmodified-loop-condition
     while (open) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -160,7 +174,9 @@ export function serve(opts: ServeOptions): Promise<Listener> {
       server.removeListener("error", onListenError);
       // Past bind, an error event with no listener would take down the
       // process; a dropped client socket is not worth that.
-      server.on("error", (err) => console.error(`http server error: ${err.message}`));
+      server.on("error", (err) =>
+        console.error(`http server error: ${err.message}`),
+      );
       resolve({
         port: (server.address() as AddressInfo).port,
         stop: () =>

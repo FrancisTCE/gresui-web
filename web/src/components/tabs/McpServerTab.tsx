@@ -17,13 +17,15 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-
-import type { McpKeyInfo } from "../../../../shared/types.ts";
 import { useAppStore } from "@/AppStore.tsx";
-import { useMcpStore } from "@/McpStore.tsx";
+import {
+  configSnippet,
+  McpKeyDialog,
+} from "@/components/dialogs/McpKeyDialog.tsx";
+import { ActivityFeed, LensSummary } from "@/components/mcp/ActivityFeed.tsx";
+import { ScopeHeader, ServerStateDot } from "@/components/mcp/McpShared.tsx";
 import { Badge } from "@/components/ui/badge.tsx";
 import { Button } from "@/components/ui/button.tsx";
-import { Skeleton } from "@/components/ui/skeleton.tsx";
 import {
   Dialog,
   DialogContent,
@@ -32,18 +34,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog.tsx";
-import { McpKeyDialog, configSnippet } from "@/components/dialogs/McpKeyDialog.tsx";
-import { ScopeHeader, ServerStateDot } from "@/components/mcp/McpShared.tsx";
-import { ActivityFeed, LensSummary } from "@/components/mcp/ActivityFeed.tsx";
+import { Skeleton } from "@/components/ui/skeleton.tsx";
+import { useMcpStore } from "@/McpStore.tsx";
+import type { McpKeyInfo } from "../../../../shared/types.ts";
 
-const CLAUDE_SNIPPET = (url: string): string => JSON.stringify({
-  mcpServers: {
-    gresui: {
-      url,
-      headers: { Authorization: "Bearer <KEY>" },
+const CLAUDE_SNIPPET = (url: string): string =>
+  JSON.stringify(
+    {
+      mcpServers: {
+        gresui: {
+          url,
+          headers: { Authorization: "Bearer <KEY>" },
+        },
+      },
     },
-  },
-}, null, 2);
+    null,
+    2,
+  );
 
 export function McpServerTab({ tabActive }: { tabActive: boolean }) {
   const { connStatus, toastStore } = useAppStore();
@@ -136,7 +143,8 @@ export function McpServerTab({ tabActive }: { tabActive: boolean }) {
   const toolMax = toolRows[0]?.[1] ?? 1;
   const keyMax = keyRows[0]?.[1] ?? 1;
   const today = new Date().toISOString().slice(0, 10);
-  const todayCount = usage?.filter((e) => e.ts.slice(0, 10) === today).length ?? 0;
+  const todayCount =
+    usage?.filter((e) => e.ts.slice(0, 10) === today).length ?? 0;
 
   return (
     <div className="h-full overflow-y-auto bg-background p-4">
@@ -219,7 +227,8 @@ export function McpServerTab({ tabActive }: { tabActive: boolean }) {
 
             <div>
               <p className="mb-1 text-xs font-medium text-muted">
-                Claude Desktop config (replace <code className="font-mono">&lt;KEY&gt;</code>):
+                Claude Desktop config (replace{" "}
+                <code className="font-mono">&lt;KEY&gt;</code>):
               </p>
               <pre className="overflow-x-auto rounded-md border border-border bg-background p-3 font-mono text-xs leading-relaxed text-foreground">
                 {CLAUDE_SNIPPET(url)}
@@ -294,7 +303,11 @@ export function McpServerTab({ tabActive }: { tabActive: boolean }) {
                       void copy(configSnippet(url, k.key), "Config")
                     }
                     disabled={url === null}
-                    title={url !== null ? "Copy client config with this key" : "Start the MCP server first"}
+                    title={
+                      url !== null
+                        ? "Copy client config with this key"
+                        : "Start the MCP server first"
+                    }
                   >
                     <Copy />
                     Copy config
@@ -348,7 +361,9 @@ export function McpServerTab({ tabActive }: { tabActive: boolean }) {
                       className="flex flex-wrap items-center gap-2 text-[11px]"
                     >
                       <EyeOff className="size-3 shrink-0 text-warning-text" />
-                      <code className="font-mono text-foreground">{l.table}</code>
+                      <code className="font-mono text-foreground">
+                        {l.table}
+                      </code>
                       <LensSummary
                         hidden={l.hiddenColumns}
                         filter={l.rowFilter}
@@ -529,7 +544,10 @@ export function McpServerTab({ tabActive }: { tabActive: boolean }) {
         onUpdate={updateKey}
       />
 
-      <Dialog open={deleting !== null} onOpenChange={(o) => !o && setDeleting(null)}>
+      <Dialog
+        open={deleting !== null}
+        onOpenChange={(o) => !o && setDeleting(null)}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Revoke connection?</DialogTitle>
@@ -539,10 +557,18 @@ export function McpServerTab({ tabActive }: { tabActive: boolean }) {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setDeleting(null)} disabled={busy}>
+            <Button
+              variant="secondary"
+              onClick={() => setDeleting(null)}
+              disabled={busy}
+            >
               Cancel
             </Button>
-            <Button variant="destructive" onClick={() => void confirmDelete()} disabled={busy}>
+            <Button
+              variant="destructive"
+              onClick={() => void confirmDelete()}
+              disabled={busy}
+            >
               Revoke
             </Button>
           </DialogFooter>

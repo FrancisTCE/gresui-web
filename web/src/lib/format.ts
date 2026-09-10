@@ -33,7 +33,12 @@ export function formatRelativeDate(iso: string | number | Date): string {
   const then = new Date(iso);
   if (Number.isNaN(then.getTime())) return "";
   const days = Math.floor((Date.now() - then.getTime()) / 86_400_000);
-  if (days < 0) return then.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  if (days < 0)
+    return then.toLocaleDateString(undefined, {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
   if (days === 0) return "today";
   if (days === 1) return "yesterday";
   if (days < 30) return `${days} days ago`;

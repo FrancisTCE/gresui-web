@@ -5,8 +5,8 @@
 // can jump to is a table you can grant — so the crawl lives here rather than
 // in either component.
 
-import type { RelationInfo } from "../../../shared/types.ts";
 import { call, getBindings } from "@/lib/rpc.ts";
+import type { RelationInfo } from "../../../shared/types.ts";
 
 export interface CatalogTable {
   database: string;
@@ -38,8 +38,9 @@ export async function crawlCatalog(): Promise<CatalogTable[]> {
       const schemas = await call(b.listSchemas(database)).catch(() => []);
       await Promise.all(
         schemas.map(async (schema) => {
-          const rels = await call(b.listRelations(database, schema))
-            .catch(() => []);
+          const rels = await call(b.listRelations(database, schema)).catch(
+            () => [],
+          );
           for (const r of rels) {
             out.push({
               database,

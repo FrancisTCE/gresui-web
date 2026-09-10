@@ -71,7 +71,7 @@ describe("validateMcpLens", () => {
 
   test("accepts a fully-qualified table", () => {
     assert.doesNotThrow(() =>
-      validateMcpLens(lens({ table: "shop.public.customers" }))
+      validateMcpLens(lens({ table: "shop.public.customers" })),
     );
   });
 
@@ -114,7 +114,7 @@ describe("validateMcpLens", () => {
 
   test("an empty lens is structurally valid — the store turns it into none", () => {
     assert.doesNotThrow(() =>
-      validateMcpLens(lens({ hiddenColumns: [], rowFilter: "" }))
+      validateMcpLens(lens({ hiddenColumns: [], rowFilter: "" })),
     );
   });
 });

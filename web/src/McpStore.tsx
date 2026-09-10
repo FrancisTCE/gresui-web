@@ -5,15 +5,17 @@
 // the fetch and the mutations live here rather than in either panel.
 import {
   createContext,
+  type ReactNode,
   useCallback,
   useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
-
+import { useAppStore } from "@/AppStore.tsx";
+import { call, getBindings } from "@/lib/rpc.ts";
+import { openEventStream, type StreamStatus } from "@/lib/sse.ts";
 import type {
   McpKeyInfo,
   McpLens,
@@ -21,9 +23,6 @@ import type {
   McpToolInfo,
   McpUsageEntry,
 } from "../../shared/types.ts";
-import { openEventStream, type StreamStatus } from "@/lib/sse.ts";
-import { useAppStore } from "@/AppStore.tsx";
-import { call, getBindings } from "@/lib/rpc.ts";
 
 export interface McpStoreValue {
   server: McpServerInfo | null;
@@ -34,7 +33,11 @@ export interface McpStoreValue {
   loading: boolean;
   refresh(): Promise<void>;
   setEnabled(enabled: boolean): Promise<void>;
-  createKey(req: { name: string; scopes: string[]; tables: string[] }): Promise<McpKeyInfo>;
+  createKey(req: {
+    name: string;
+    scopes: string[];
+    tables: string[];
+  }): Promise<McpKeyInfo>;
   updateKey(
     id: string,
     patch: { name?: string; scopes?: string[]; tables?: string[] },
@@ -141,10 +144,13 @@ export function McpStoreProvider({ children }: { children: ReactNode }) {
         setLive((prev) =>
           prev.some((p) => p.id === entry.id)
             ? prev
-            : [entry, ...prev].slice(0, LIVE_CAP)
+            : [entry, ...prev].slice(0, LIVE_CAP),
         );
         if (entry.ok && entry.target && entry.rowKeys?.length) {
-          setFlashing((prev) => [entry, ...prev.filter((p) => p.id !== entry.id)]);
+          setFlashing((prev) => [
+            entry,
+            ...prev.filter((p) => p.id !== entry.id),
+          ]);
           const t = window.setTimeout(() => {
             setFlashing((prev) => prev.filter((p) => p.id !== entry.id));
             timers.current = timers.current.filter((x) => x !== t);

@@ -23,10 +23,9 @@
 // Encrypted values are stored as `enc:v1:<base64(iv || ciphertext)>`; the
 // prefix doubles as the legacy-plaintext detector.
 
-import { spawn } from "node:child_process";
-import { chmodSync } from "node:fs";
-import { promises as fsp } from "node:fs";
 import { Buffer } from "node:buffer";
+import { type ChildProcess, spawn } from "node:child_process";
+import { chmodSync, promises as fsp } from "node:fs";
 
 const KEY_NAME = "gresui.key";
 const KEY_BYTES = 32;
@@ -40,8 +39,9 @@ const KEYCHAIN_ACCOUNT = "gresui-key";
 const CLI_TIMEOUT_MS = 5_000;
 
 function encodeBase64(bytes: Uint8Array): string {
-  return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-    .toString("base64");
+  return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString(
+    "base64",
+  );
 }
 
 function decodeBase64(s: string): Uint8Array {
@@ -60,12 +60,13 @@ async function runCli(
 ): Promise<CliResult> {
   return await new Promise((resolve) => {
     const [exe, ...argv] = cmd;
-    let child;
+    let child: ChildProcess;
     try {
       child = spawn(exe, argv, {
-        stdio: input === undefined
-          ? ["ignore", "pipe", "pipe"]
-          : ["pipe", "pipe", "pipe"],
+        stdio:
+          input === undefined
+            ? ["ignore", "pipe", "pipe"]
+            : ["pipe", "pipe", "pipe"],
       });
     } catch {
       resolve({ ok: false, out: "" });
@@ -106,18 +107,26 @@ const OS = process.platform;
 /** Is a usable OS keychain present right now? */
 async function keychainServiceUp(): Promise<boolean> {
   if (OS === "linux") {
-    if (!await cliExists("secret-tool")) return false;
+    if (!(await cliExists("secret-tool"))) return false;
     if (await cliExists("gdbus")) {
-      return (await runCli([
-        "gdbus", "call", "--session",
-        "--dest", "org.freedesktop.secrets",
-        "--object-path", "/org/freedesktop/secrets",
-        "--method", "org.freedesktop.DBus.Peer.Ping",
-      ])).ok;
+      return (
+        await runCli([
+          "gdbus",
+          "call",
+          "--session",
+          "--dest",
+          "org.freedesktop.secrets",
+          "--object-path",
+          "/org/freedesktop/secrets",
+          "--method",
+          "org.freedesktop.DBus.Peer.Ping",
+        ])
+      ).ok;
     }
     if (await cliExists("busctl")) {
-      return (await runCli(["busctl", "--user", "list"])).out
-        .includes("org.freedesktop.secrets");
+      return (await runCli(["busctl", "--user", "list"])).out.includes(
+        "org.freedesktop.secrets",
+      );
     }
     return false;
   }
@@ -129,15 +138,24 @@ async function keychainServiceUp(): Promise<boolean> {
 async function keychainRead(): Promise<string | null> {
   if (OS === "linux") {
     const r = await runCli([
-      "secret-tool", "lookup", "service", KEYCHAIN_SERVICE,
-      "account", KEYCHAIN_ACCOUNT,
+      "secret-tool",
+      "lookup",
+      "service",
+      KEYCHAIN_SERVICE,
+      "account",
+      KEYCHAIN_ACCOUNT,
     ]);
     return r.ok && r.out ? r.out : null;
   }
   if (OS === "darwin") {
     const r = await runCli([
-      "security", "find-generic-password", "-s", KEYCHAIN_SERVICE,
-      "-a", KEYCHAIN_ACCOUNT, "-w",
+      "security",
+      "find-generic-password",
+      "-s",
+      KEYCHAIN_SERVICE,
+      "-a",
+      KEYCHAIN_ACCOUNT,
+      "-w",
     ]);
     return r.ok && r.out ? r.out : null;
   }
@@ -147,18 +165,37 @@ async function keychainRead(): Promise<string | null> {
 /** Store (or replace) the base64 key in the keychain. */
 async function keychainWrite(b64: string): Promise<boolean> {
   if (OS === "linux") {
-    return (await runCli([
-      "secret-tool", "store", "--label=gresui", "service", KEYCHAIN_SERVICE,
-      "account", KEYCHAIN_ACCOUNT,
-    ], `${b64}\n`)).ok;
+    return (
+      await runCli(
+        [
+          "secret-tool",
+          "store",
+          "--label=gresui",
+          "service",
+          KEYCHAIN_SERVICE,
+          "account",
+          KEYCHAIN_ACCOUNT,
+        ],
+        `${b64}\n`,
+      )
+    ).ok;
   }
   if (OS === "darwin") {
     // macOS `security` takes -w as argv (visible to same-uid processes for a
     // moment); acceptable v1 — same-UID already reads the file fallback.
-    return (await runCli([
-      "security", "add-generic-password", "-s", KEYCHAIN_SERVICE,
-      "-a", KEYCHAIN_ACCOUNT, "-w", b64, "-U",
-    ])).ok;
+    return (
+      await runCli([
+        "security",
+        "add-generic-password",
+        "-s",
+        KEYCHAIN_SERVICE,
+        "-a",
+        KEYCHAIN_ACCOUNT,
+        "-w",
+        b64,
+        "-U",
+      ])
+    ).ok;
   }
   return false;
 }
@@ -179,13 +216,16 @@ export async function loadKey(
 ): Promise<{ key: CryptoKey; source: KeySource }> {
   const filePath = `${dir}/${KEY_NAME}`;
 
-  const importRaw = async (raw: Uint8Array, what: string): Promise<CryptoKey> => {
-    if (raw.byteLength !== KEY_BYTES) {
+  const importRaw = async (
+    bytes: Uint8Array,
+    what: string,
+  ): Promise<CryptoKey> => {
+    if (bytes.byteLength !== KEY_BYTES) {
       throw new Error(
-        `gresui ${what} is corrupt (${raw.byteLength} bytes, expected ${KEY_BYTES})`,
+        `gresui ${what} is corrupt (${bytes.byteLength} bytes, expected ${KEY_BYTES})`,
       );
     }
-    const keyData = new Uint8Array(raw).buffer;
+    const keyData = new Uint8Array(bytes).buffer;
     return await crypto.subtle.importKey(
       "raw",
       keyData,
@@ -201,8 +241,8 @@ export async function loadKey(
       return null;
     }
   };
-  const writeFile = async (raw: Uint8Array): Promise<void> => {
-    await fsp.writeFile(filePath, raw, { mode: 0o600 });
+  const writeFile = async (bytes: Uint8Array): Promise<void> => {
+    await fsp.writeFile(filePath, bytes, { mode: 0o600 });
     // Harden perms regardless of how the file got here — a pre-existing file
     // may carry looser modes. Windows: chmod is a no-op-ish; best-effort only.
     try {
@@ -216,8 +256,10 @@ export async function loadKey(
   const decodeEntry = (b64: string): Uint8Array => {
     try {
       return decodeBase64(b64);
-    } catch {
-      throw new Error("gresui keychain entry is corrupt (invalid base64)");
+    } catch (err) {
+      throw new Error("gresui keychain entry is corrupt (invalid base64)", {
+        cause: err,
+      });
     }
   };
   /** Read the file key, or create it. Never truncate-rewrites an existing
@@ -245,11 +287,11 @@ export async function loadKey(
     if (!b64) {
       throw new Error(
         `gresui keychain entry is missing (service "${KEYCHAIN_SERVICE}", ` +
-        `account "${KEYCHAIN_ACCOUNT}") — stored passwords cannot be decrypted ` +
-        "without it. Restart gresui-web from your desktop session and restore " +
-        "the keychain, " +
-        "or set GRESUI_KEY_SOURCE=file to force a local key (existing " +
-        "passwords will read empty and must be re-entered).",
+          `account "${KEYCHAIN_ACCOUNT}") — stored passwords cannot be decrypted ` +
+          "without it. Restart gresui-web from your desktop session and restore " +
+          "the keychain, " +
+          "or set GRESUI_KEY_SOURCE=file to force a local key (existing " +
+          "passwords will read empty and must be re-entered).",
       );
     }
     raw = decodeEntry(b64);
@@ -308,7 +350,10 @@ export async function loadKey(
   return { key, source: effective };
 }
 
-export async function encryptSecret(plain: string, key: CryptoKey): Promise<string> {
+export async function encryptSecret(
+  plain: string,
+  key: CryptoKey,
+): Promise<string> {
   const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
   const ct = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv },
@@ -326,7 +371,10 @@ export async function encryptSecret(plain: string, key: CryptoKey): Promise<stri
  * Undecryptable values (lost/rotated key) return "" rather than crashing —
  * the user re-enters the password and the next save re-encrypts it.
  */
-export async function decryptSecret(value: string, key: CryptoKey): Promise<string> {
+export async function decryptSecret(
+  value: string,
+  key: CryptoKey,
+): Promise<string> {
   if (!value.startsWith(SECRET_PREFIX)) return value;
   try {
     const raw = decodeBase64(value.slice(SECRET_PREFIX.length));

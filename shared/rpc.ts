@@ -79,8 +79,15 @@ export interface Bindings {
   listMcpKeys(): Promise<McpKeyInfo[]>;
   /** Recorded tool calls, newest first, retained window. */
   listMcpUsage(): Promise<McpUsageEntry[]>;
-  createMcpKey(req: { name: string; scopes: string[]; tables: string[] }): Promise<McpKeyInfo>;
-  updateMcpKey(id: string, patch: { name?: string; scopes?: string[]; tables?: string[] }): Promise<McpKeyInfo>;
+  createMcpKey(req: {
+    name: string;
+    scopes: string[];
+    tables: string[];
+  }): Promise<McpKeyInfo>;
+  updateMcpKey(
+    id: string,
+    patch: { name?: string; scopes?: string[]; tables?: string[] },
+  ): Promise<McpKeyInfo>;
   deleteMcpKey(id: string): Promise<void>;
   /** Restrict what one key sees of one table. A lens that hides nothing and
    * filters nothing is stored as no lens at all. */

@@ -18,9 +18,6 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { useState } from "react";
-
-import type { McpUsageEntry } from "../../../../shared/types.ts";
-import { useMcpActivity, useMcpStore } from "@/McpStore.tsx";
 import { Badge } from "@/components/ui/badge.tsx";
 import {
   argWhere,
@@ -30,6 +27,8 @@ import {
   relTime,
 } from "@/lib/mcp-activity.ts";
 import { cn } from "@/lib/utils.ts";
+import { useMcpActivity, useMcpStore } from "@/McpStore.tsx";
+import type { McpUsageEntry } from "../../../../shared/types.ts";
 
 export function ActivityFeed({
   /** Canonical "db.schema.table" to narrow to, or undefined for everything. */
@@ -44,8 +43,10 @@ export function ActivityFeed({
   const [open, setOpen] = useState<number | null>(null);
 
   const all = mergeActivity(activity?.live ?? [], usage);
-  const entries = (target === undefined ? all : forTarget(all, target))
-    .slice(0, limit);
+  const entries = (target === undefined ? all : forTarget(all, target)).slice(
+    0,
+    limit,
+  );
 
   return (
     <section>
@@ -85,20 +86,23 @@ export function ActivityFeed({
 /** Whether we are attached to the stream — a dead feed must not look like a
  * quiet one, or the operator would read silence as "nothing is happening". */
 function LiveDot({ status }: { status: "connecting" | "open" | "closed" }) {
-  const label = status === "open"
-    ? "Live"
-    : status === "connecting"
-    ? "Connecting…"
-    : "Not live";
+  const label =
+    status === "open"
+      ? "Live"
+      : status === "connecting"
+        ? "Connecting…"
+        : "Not live";
   return (
     <span
       className={cn(
         "inline-flex items-center gap-1.5 text-[11px]",
         status === "open" ? "text-accent-text" : "text-muted",
       )}
-      title={status === "open"
-        ? "Attached to the backend event stream"
-        : "Showing recorded history only"}
+      title={
+        status === "open"
+          ? "Attached to the backend event stream"
+          : "Showing recorded history only"
+      }
     >
       <span className="relative flex size-2" aria-hidden>
         {status === "open" ? (
@@ -163,13 +167,20 @@ function ActivityRow({
           {describeResult(entry)}
         </span>
         {lensed ? (
-          <Badge variant="secondary" className="shrink-0 gap-1" title="A lens was applied">
+          <Badge
+            variant="secondary"
+            className="shrink-0 gap-1"
+            title="A lens was applied"
+          >
             <EyeOff />
             lens
           </Badge>
         ) : null}
         {!entry.ok ? (
-          <TriangleAlert className="size-3.5 shrink-0 text-danger-text" aria-hidden />
+          <TriangleAlert
+            className="size-3.5 shrink-0 text-danger-text"
+            aria-hidden
+          />
         ) : null}
         <span
           className="shrink-0 text-[11px] tabular-nums text-subtle"
@@ -198,7 +209,11 @@ function ActivityDetail({
         <Row label="Key">
           {entry.keyName ?? <em className="text-muted">revoked</em>}
         </Row>
-        {entry.target ? <Row label="Relation" mono>{entry.target}</Row> : null}
+        {entry.target ? (
+          <Row label="Relation" mono>
+            {entry.target}
+          </Row>
+        ) : null}
         <Row label="Took">{entry.durationMs} ms</Row>
         {where ? (
           <Row label="Filter" mono>
@@ -287,7 +302,11 @@ export function LensSummary({
         <>
           <EyeOff className="size-3 shrink-0 text-warning-text" />
           {hidden.map((c) => (
-            <Badge key={c} variant="secondary" className="font-mono line-through">
+            <Badge
+              key={c}
+              variant="secondary"
+              className="font-mono line-through"
+            >
               {c}
             </Badge>
           ))}
@@ -314,9 +333,9 @@ export function ActivityPulse() {
   return (
     <span
       className="inline-flex items-center gap-1 text-[11px] text-accent-text"
-      title={`${latest.tool}${latest.target ? ` · ${latest.target}` : ""} — ${
-        relTime(latest.ts)
-      }`}
+      title={`${latest.tool}${latest.target ? ` · ${latest.target}` : ""} — ${relTime(
+        latest.ts,
+      )}`}
     >
       <Radio className="size-3 animate-pulse" aria-hidden />
       <code className="font-mono">{latest.tool}</code>

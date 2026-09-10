@@ -10,10 +10,9 @@ import {
   readFileSync,
   writeSync,
 } from "node:fs";
-import { normalize } from "node:path";
-import path from "node:path";
+import path, { normalize } from "node:path";
 import { fileURLToPath } from "node:url";
-
+import { ignoreError } from "../shared/noop.ts";
 import type { Bindings } from "../shared/rpc.ts";
 import type {
   CellValue,
@@ -44,7 +43,10 @@ let logPath: string | null = null;
 const logStamp = (): string => new Date().toISOString();
 
 function setupLogging(): void {
-  const candidates = [`${process.cwd()}/gresui.log`, `${config.configDir()}/gresui.log`];
+  const candidates = [
+    `${process.cwd()}/gresui.log`,
+    `${config.configDir()}/gresui.log`,
+  ];
   for (const p of candidates) {
     try {
       openSync(p, "a");
@@ -64,9 +66,9 @@ function setupLogging(): void {
   // to hold the value the guard just proved non-null.
   const dest = logPath;
   const write = (level: string, args: unknown[]): void => {
-    const line = `[${logStamp()}] ${level} ${args.map((a) =>
-      typeof a === "string" ? a : JSON.stringify(a)
-    ).join(" ")}\n`;
+    const line = `[${logStamp()}] ${level} ${args
+      .map((a) => (typeof a === "string" ? a : JSON.stringify(a)))
+      .join(" ")}\n`;
     try {
       const fd = openSync(dest, "a");
       try {
@@ -79,9 +81,18 @@ function setupLogging(): void {
     }
   };
   const orig = { log: console.log, error: console.error, warn: console.warn };
-  console.log = (...a) => (write("LOG", a), orig.log(...a));
-  console.error = (...a) => (write("ERR", a), orig.error(...a));
-  console.warn = (...a) => (write("WARN", a), orig.warn(...a));
+  console.log = (...a) => {
+    write("LOG", a);
+    orig.log(...a);
+  };
+  console.error = (...a) => {
+    write("ERR", a);
+    orig.error(...a);
+  };
+  console.warn = (...a) => {
+    write("WARN", a);
+    orig.warn(...a);
+  };
   console.log("gresui backend logging initialized");
 }
 
@@ -157,7 +168,8 @@ const RPC_TOKEN = crypto.randomUUID();
 function handleRequest(req: Request): Response | Promise<Response> {
   const u = new URL(req.url);
   if (req.method === "POST" && u.pathname === "/rpc") return handleRpc(req);
-  if (req.method === "GET" && u.pathname === "/events") return handleEvents(req);
+  if (req.method === "GET" && u.pathname === "/events")
+    return handleEvents(req);
   return serveStatic(req);
 }
 
@@ -282,7 +294,7 @@ const bindings: Bindings = {
   deleteConnection: (id: string) => config.deleteConnection(id),
 
   connect: async (c: ConnectionConfig): Promise<ConnStatus> => {
-    if (pool) await pool.close().catch(() => {});
+    if (pool) await pool.close().catch(ignoreError);
     pool = null;
     const p = new PgPool(c);
     await p.get(p.databases()[0]); // probe + cache the anchor so getPrimary() works
@@ -292,7 +304,7 @@ const bindings: Bindings = {
 
   disconnect: async (): Promise<void> => {
     if (pool) {
-      await pool.close().catch(() => {});
+      await pool.close().catch(ignoreError);
       pool = null;
     }
   },
@@ -311,7 +323,7 @@ const bindings: Bindings = {
       await s.connect();
       return await meta.listDatabases(s); // already excludes templates/non-connectable
     } finally {
-      await s.close().catch(() => {});
+      await s.close().catch(ignoreError);
     }
   },
 
@@ -331,7 +343,8 @@ const bindings: Bindings = {
 
   browse: async (db: string, req) => data.browse(await sessFor(db), req),
 
-  exportTable: async (db: string, req) => data.exportTable(await sessFor(db), req),
+  exportTable: async (db: string, req) =>
+    data.exportTable(await sessFor(db), req),
 
   insertRow: async (
     db: string,
@@ -347,7 +360,15 @@ const bindings: Bindings = {
     pkColumns: string[],
     pkValues: CellValue[],
     changes: Record<string, CellValue>,
-  ) => data.updateRow(await sessFor(db), schema, table, pkColumns, pkValues, changes),
+  ) =>
+    data.updateRow(
+      await sessFor(db),
+      schema,
+      table,
+      pkColumns,
+      pkValues,
+      changes,
+    ),
 
   deleteRows: async (
     db: string,
@@ -382,7 +403,9 @@ const bindings: Bindings = {
   },
 
   listMcpTools: () =>
-    Promise.resolve(mcp.MCP_TOOLS.map(({ name, description }) => ({ name, description }))),
+    Promise.resolve(
+      mcp.MCP_TOOLS.map(({ name, description }) => ({ name, description })),
+    ),
 
   listMcpKeys: () => config.listMcpKeys(),
 
@@ -443,7 +466,10 @@ async function handleRpc(req: Request): Promise<Response> {
   const origin = req.headers.get("origin");
   if (origin) {
     const port = PORT;
-    if (origin !== `http://127.0.0.1:${port}` && origin !== `http://localhost:${port}`) {
+    if (
+      origin !== `http://127.0.0.1:${port}` &&
+      origin !== `http://localhost:${port}`
+    ) {
       return rpcError(403, "Forbidden", "invalid origin");
     }
   }
@@ -470,10 +496,12 @@ async function handleRpc(req: Request): Promise<Response> {
   // Own properties only — prototype members (toString, constructor, …) are
   // not RPC methods.
   const fn = Object.hasOwn(bindings, method)
-    ? (bindings as unknown as Record<
-        string,
-        (...a: unknown[]) => Promise<unknown>
-      >)[method]
+    ? (
+        bindings as unknown as Record<
+          string,
+          (...a: unknown[]) => Promise<unknown>
+        >
+      )[method]
     : undefined;
   if (!fn) {
     return rpcJson({
@@ -503,7 +531,9 @@ const PORT = server.port;
 
 setupLogging();
 
-console.log(`GRESUI running at http://127.0.0.1:${PORT}/ — press Ctrl+C to stop`);
+console.log(
+  `GRESUI running at http://127.0.0.1:${PORT}/ — press Ctrl+C to stop`,
+);
 
 // Re-bind the MCP listener at boot when it was enabled (persisted flag).
 if (await config.getMcpEnabled()) {
@@ -514,11 +544,12 @@ if (await config.getMcpEnabled()) {
 // Open the default browser (best-effort).
 try {
   const url = `http://127.0.0.1:${PORT}/`;
-  const open: [string, ...string[]] = process.platform === "darwin"
-    ? ["open", url]
-    : process.platform === "win32"
-    ? ["cmd", "/c", "start", "", url]
-    : ["xdg-open", url];
+  const open: [string, ...string[]] =
+    process.platform === "darwin"
+      ? ["open", url]
+      : process.platform === "win32"
+        ? ["cmd", "/c", "start", "", url]
+        : ["xdg-open", url];
   const [exe, ...argv] = open;
   // A missing opener surfaces as an async "error" event (ENOENT), not a sync
   // throw — without a handler it becomes an uncaught exception and kills the

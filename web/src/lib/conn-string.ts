@@ -31,7 +31,10 @@ const DEFAULT_PORT = 5432;
 
 /** libpq sslmode → this app's three modes. `allow`/`prefer` are opportunistic,
  * which the driver here cannot express, so they land on the honest floor. */
-const SSL_MODES: Record<string, { ssl: ParsedConnection["ssl"]; warn?: string }> = {
+const SSL_MODES: Record<
+  string,
+  { ssl: ParsedConnection["ssl"]; warn?: string }
+> = {
   disable: { ssl: "disable" },
   allow: {
     ssl: "disable",
@@ -120,7 +123,8 @@ function parseUri(text: string): ParseResult {
   } catch {
     // URL() reports an out-of-range port as a plain parse failure; dig the
     // port out of the authority so the message names the real problem.
-    const authority = text.slice(text.indexOf("//") + 2).split(/[/?#]/)[0] ?? "";
+    const authority =
+      text.slice(text.indexOf("//") + 2).split(/[/?#]/)[0] ?? "";
     const portMatch = authority.match(/:(\d+)$/);
     if (portMatch && Number(portMatch[1]) > 65535) {
       return { ok: false, error: `Invalid port "${portMatch[1]}".`, warnings };
@@ -186,7 +190,9 @@ function parseUri(text: string): ParseResult {
     }
   }
   if (dropped.length > 0) {
-    warnings.push(`Ignored parameter${dropped.length > 1 ? "s" : ""}: ${dropped.join(", ")}.`);
+    warnings.push(
+      `Ignored parameter${dropped.length > 1 ? "s" : ""}: ${dropped.join(", ")}.`,
+    );
   }
 
   return { ok: true, value: out, warnings };
@@ -298,7 +304,9 @@ function parseDsn(text: string): ParseResult {
     }
   }
   if (dropped.length > 0) {
-    warnings.push(`Ignored parameter${dropped.length > 1 ? "s" : ""}: ${dropped.join(", ")}.`);
+    warnings.push(
+      `Ignored parameter${dropped.length > 1 ? "s" : ""}: ${dropped.join(", ")}.`,
+    );
   }
 
   return { ok: true, value: out, warnings };
@@ -345,14 +353,16 @@ export function formatConnectionString(
     auth += "@";
   }
   // Bare IPv6 needs its brackets back before it can go in a URI.
-  const host = cfg.host.includes(":") && !cfg.host.startsWith("[")
-    ? `[${cfg.host}]`
-    : cfg.host;
+  const host =
+    cfg.host.includes(":") && !cfg.host.startsWith("[")
+      ? `[${cfg.host}]`
+      : cfg.host;
   const port = cfg.port === DEFAULT_PORT ? "" : `:${cfg.port}`;
   const db = cfg.database ? `/${enc(cfg.database)}` : "";
-  const sslmode = cfg.ssl === "disable"
-    ? ""
-    : `?sslmode=${cfg.ssl === "require" ? "require" : "verify-full"}`;
+  const sslmode =
+    cfg.ssl === "disable"
+      ? ""
+      : `?sslmode=${cfg.ssl === "require" ? "require" : "verify-full"}`;
   return `postgresql://${auth}${host}${port}${db}${sslmode}`;
 }
 

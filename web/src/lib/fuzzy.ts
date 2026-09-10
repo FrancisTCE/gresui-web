@@ -32,7 +32,10 @@ function isBoundary(
  * Score `needle` against `haystack`, or null when the characters of `needle`
  * do not appear in order. An empty needle matches everything at score 0.
  */
-export function fuzzyMatch(needle: string, haystack: string): FuzzyMatch | null {
+export function fuzzyMatch(
+  needle: string,
+  haystack: string,
+): FuzzyMatch | null {
   if (needle === "") return { score: 0, positions: [] };
   const n = needle.toLowerCase();
   const h = haystack.toLowerCase();

@@ -1,7 +1,5 @@
 // InsertRowDialog — one input per column, type-aware widgets.
 import { useEffect, useMemo, useState } from "react";
-
-import type { CellValue, ColumnInfo } from "../../../../shared/types.ts";
 import { Button } from "@/components/ui/button.tsx";
 import {
   Dialog,
@@ -14,10 +12,12 @@ import {
 import { Input } from "@/components/ui/input.tsx";
 import { Label } from "@/components/ui/label.tsx";
 import { cn } from "@/lib/utils.ts";
+import type { CellValue, ColumnInfo } from "../../../../shared/types.ts";
 
 const JSON_RE = /^(json|jsonb)$/;
 const BOOL_RE = /^bool(ean)?$/;
-const NUM_RE = /^(int|int2|int4|int8|smallint|integer|bigint|numeric|decimal|real|double|float|money|serial|bigserial)/;
+const NUM_RE =
+  /^(int|int2|int4|int8|smallint|integer|bigint|numeric|decimal|real|double|float|money|serial|bigserial)/;
 const DATE_RE = /^(date|timestamp|timestamptz)/;
 
 export function InsertRowDialog({
@@ -121,7 +121,11 @@ export function InsertRowDialog({
           </div>
         ) : null}
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>
+          <Button
+            variant="secondary"
+            onClick={() => onOpenChange(false)}
+            disabled={busy}
+          >
             Cancel
           </Button>
           <Button onClick={() => void submit()} disabled={busy}>
@@ -150,7 +154,9 @@ function Field({
       <Label htmlFor={`f-${name}`} className="flex items-center gap-1.5">
         <span className="truncate">{name}</span>
         {isPk ? (
-          <span className="rounded bg-accent-soft px-1 text-[10px] text-accent-text">PK</span>
+          <span className="rounded bg-accent-soft px-1 text-[10px] text-accent-text">
+            PK
+          </span>
         ) : null}
         {!notNull ? (
           <span className="text-[10px] font-normal text-muted">nullable</span>
@@ -169,9 +175,18 @@ function Field({
           id={`f-${name}`}
           value={String(value)}
           onChange={(e) => onChange(e.target.value)}
-          type={DATE_RE.test(type) ? "datetime-local" : NUM_RE.test(type) ? "number" : "text"}
+          type={
+            DATE_RE.test(type)
+              ? "datetime-local"
+              : NUM_RE.test(type)
+                ? "number"
+                : "text"
+          }
           placeholder={hasDefault ? "default" : notNull ? "required" : "null"}
-          className={cn("font-mono text-xs", JSON_RE.test(type) && "h-16 items-start")}
+          className={cn(
+            "font-mono text-xs",
+            JSON_RE.test(type) && "h-16 items-start",
+          )}
         />
       )}
       <span className="truncate font-mono text-[10px] text-muted">{type}</span>

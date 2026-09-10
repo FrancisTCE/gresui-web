@@ -18,11 +18,12 @@ import {
   Table2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-
-import type { McpKeyInfo, McpLens } from "../../../../shared/types.ts";
 import { useAppStore } from "@/AppStore.tsx";
-import { useMcpStore } from "@/McpStore.tsx";
-import { NoTableSelected } from "@/screens/MainShell.tsx";
+import { McpKeyDialog } from "@/components/dialogs/McpKeyDialog.tsx";
+import { ActivityFeed, LensSummary } from "@/components/mcp/ActivityFeed.tsx";
+import { LensDialog } from "@/components/mcp/LensDialog.tsx";
+import { ScopeHeader, ServerStateDot } from "@/components/mcp/McpShared.tsx";
+import { NoTableSelected } from "@/components/NoTableSelected.tsx";
 import { Badge } from "@/components/ui/badge.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import {
@@ -33,20 +34,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog.tsx";
-import { McpKeyDialog } from "@/components/dialogs/McpKeyDialog.tsx";
-import { ScopeHeader, ServerStateDot } from "@/components/mcp/McpShared.tsx";
-import { ActivityFeed, LensSummary } from "@/components/mcp/ActivityFeed.tsx";
-import { LensDialog } from "@/components/mcp/LensDialog.tsx";
 import {
+  type Coverage,
   keyCoverage,
   lensFor,
   qualifiedTable,
   tableEntry,
-  withTable,
   withoutTable,
-  type Coverage,
+  withTable,
 } from "@/lib/mcp-scope.ts";
 import { cn } from "@/lib/utils.ts";
+import { useMcpStore } from "@/McpStore.tsx";
+import type { McpKeyInfo, McpLens } from "../../../../shared/types.ts";
 
 export function TableMcpTab({
   tabActive,
@@ -203,16 +202,20 @@ export function TableMcpTab({
           {!serverOn
             ? "Server stopped — nothing is served, including this table."
             : exposed.length === 0
-            ? "Not exposed — no MCP client can read this table."
-            : `Exposed through ${exposed.length} connection${exposed.length === 1 ? "" : "s"}.`}
+              ? "Not exposed — no MCP client can read this table."
+              : `Exposed through ${exposed.length} connection${exposed.length === 1 ? "" : "s"}.`}
         </span>
         {serverOn && exposed.length > 0 ? (
           <span className="flex items-center gap-1.5">
             {explicitCount > 0 ? (
-              <Badge variant="default">{explicitCount} scoped to this table</Badge>
+              <Badge variant="default">
+                {explicitCount} scoped to this table
+              </Badge>
             ) : null}
             {inheritedCount > 0 ? (
-              <Badge variant="outline">{inheritedCount} via all-tables key</Badge>
+              <Badge variant="outline">
+                {inheritedCount} via all-tables key
+              </Badge>
             ) : null}
             {lensedCount > 0 ? (
               <Badge variant="secondary" className="gap-1">
@@ -234,7 +237,7 @@ export function TableMcpTab({
                   title: "Failed to start MCP server",
                   description: e.message,
                   variant: "destructive",
-                })
+                }),
               );
             }}
           >
@@ -258,8 +261,8 @@ export function TableMcpTab({
           <ShieldOff className="size-4 shrink-0" />
           <span className="flex-1 text-left">
             No connection reaches{" "}
-            <code className="font-mono text-foreground">{label}</code>. Expose it
-            to one below, or create a connection scoped to just this table.
+            <code className="font-mono text-foreground">{label}</code>. Expose
+            it to one below, or create a connection scoped to just this table.
           </span>
         </p>
       ) : (
@@ -332,7 +335,10 @@ export function TableMcpTab({
         onUpdate={updateKey}
       />
 
-      <Dialog open={lastTable !== null} onOpenChange={(o) => !o && setLastTable(null)}>
+      <Dialog
+        open={lastTable !== null}
+        onOpenChange={(o) => !o && setLastTable(null)}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>That would widen the connection</DialogTitle>
@@ -462,17 +468,19 @@ function KeyRow({
         </div>
       ) : null}
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        {k.scopes.toSorted().map((s) => (
-          <Badge key={s} variant="muted" className="font-mono">
-            {s}
-          </Badge>
-        ))}
+        {k.scopes
+          .toSorted((a, b) => a.localeCompare(b))
+          .map((s) => (
+            <Badge key={s} variant="muted" className="font-mono">
+              {s}
+            </Badge>
+          ))}
         <span className="ml-auto text-[11px] text-muted">
           {inherited
             ? "connection-wide key"
             : k.lastUsedAt
-            ? `last used ${new Date(k.lastUsedAt).toLocaleString()}`
-            : "never used"}
+              ? `last used ${new Date(k.lastUsedAt).toLocaleString()}`
+              : "never used"}
         </span>
       </div>
     </div>

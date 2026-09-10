@@ -11,7 +11,7 @@ import type {
   ExportResponse,
   Row,
 } from "../shared/types.ts";
-import { quoteIdent, type PgSession } from "./pg.ts";
+import { type PgSession, quoteIdent } from "./pg.ts";
 
 export const BROWSE_CAP = 10_000;
 export const EXPORT_CAP = 100_000;
@@ -40,9 +40,7 @@ function lensedRelation(
     throw new Error("lens hides every column of this table");
   }
   const cols = lens.columns.map((c) => quoteIdent([c])).join(", ");
-  const filter = lens.filter && lens.filter.trim()
-    ? ` WHERE ${lens.filter}`
-    : "";
+  const filter = lens.filter?.trim() ? ` WHERE ${lens.filter}` : "";
   return `(SELECT ${cols} FROM ${base}${filter}) AS ${quoteIdent(["gresui_lens"])}`;
 }
 
@@ -51,7 +49,7 @@ function whereOrderSql(
   where?: string,
   orderBy?: { column: string; dir: "asc" | "desc" },
 ): string {
-  const w = where && where.trim() ? ` WHERE ${where}` : "";
+  const w = where?.trim() ? ` WHERE ${where}` : "";
   const o = orderBy
     ? ` ORDER BY ${quoteIdent([orderBy.column])} ${orderBy.dir === "desc" ? "DESC" : "ASC"}`
     : "";
@@ -90,7 +88,9 @@ async function exactCount(
 ): Promise<number> {
   // count() ignores ORDER BY — including it makes the aggregate query invalid
   // ("column must appear in the GROUP BY clause").
-  const res = await s.query(`SELECT count(*)::text FROM ${q}${whereOrderSql(where)}`);
+  const res = await s.query(
+    `SELECT count(*)::text FROM ${q}${whereOrderSql(where)}`,
+  );
   return Number(res.rows[0]?.[0] ?? 0);
 }
 
@@ -199,7 +199,9 @@ export async function updateRow(
   const keys = Object.keys(changes);
   if (keys.length === 0) throw new Error("No values to write");
   const q = quoteIdent([schema, table]);
-  const setSql = keys.map((k, i) => `${quoteIdent([k])} = $${i + 1}`).join(", ");
+  const setSql = keys
+    .map((k, i) => `${quoteIdent([k])} = $${i + 1}`)
+    .join(", ");
   const whereSql = pkColumns
     .map((pk, i) => `${quoteIdent([pk])} = $${keys.length + i + 1}`)
     .join(" AND ");
@@ -225,15 +227,13 @@ export async function deleteRows(
   const q = quoteIdent([schema, table]);
   const per = pkColumns.length;
   const clauses = rows
-    .map((_row, ri) =>
-      `(${pkColumns
-        .map((pk, pi) => `${quoteIdent([pk])} = $${ri * per + pi + 1}`)
-        .join(" AND ")})`
+    .map(
+      (_row, ri) =>
+        `(${pkColumns
+          .map((pk, pi) => `${quoteIdent([pk])} = $${ri * per + pi + 1}`)
+          .join(" AND ")})`,
     )
     .join(" OR ");
-  const res = await s.query(
-    `DELETE FROM ${q} WHERE ${clauses}`,
-    rows.flat(),
-  );
+  const res = await s.query(`DELETE FROM ${q} WHERE ${clauses}`, rows.flat());
   return res.rowCount;
 }

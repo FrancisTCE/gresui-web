@@ -1,5 +1,4 @@
 import { Download } from "lucide-react";
-import type { ExportFormat } from "@/lib/export.ts";
 import { Button } from "@/components/ui/button.tsx";
 import {
   DropdownMenu,
@@ -7,6 +6,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu.tsx";
+import type { ExportFormat } from "@/lib/export.ts";
 
 export function ExportMenu({
   onExport,
@@ -26,8 +26,12 @@ export function ExportMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={() => onExport("csv")}>Export CSV</DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onExport("json")}>Export JSON</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onExport("csv")}>
+          Export CSV
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onExport("json")}>
+          Export JSON
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

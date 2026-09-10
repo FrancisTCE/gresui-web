@@ -1,9 +1,8 @@
 // Run with: npm test   (node --test, no test framework needed)
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-
-import type { McpUsageEntry } from "../../../shared/types.ts";
 import { rowKey } from "../../../shared/row-key.ts";
+import type { McpUsageEntry } from "../../../shared/types.ts";
 import {
   argWhere,
   describeResult,
@@ -35,12 +34,21 @@ function entry(over: Partial<McpUsageEntry> = {}): McpUsageEntry {
 describe("mergeActivity", () => {
   test("newest first, by id", () => {
     const merged = mergeActivity([], [entry({ id: 2 }), entry({ id: 7 })]);
-    assert.deepEqual(merged.map((e) => e.id), [7, 2]);
+    assert.deepEqual(
+      merged.map((e) => e.id),
+      [7, 2],
+    );
   });
 
   test("an entry that arrives live and in history appears once", () => {
-    const merged = mergeActivity([entry({ id: 5 })], [entry({ id: 5 }), entry({ id: 4 })]);
-    assert.deepEqual(merged.map((e) => e.id), [5, 4]);
+    const merged = mergeActivity(
+      [entry({ id: 5 })],
+      [entry({ id: 5 }), entry({ id: 4 })],
+    );
+    assert.deepEqual(
+      merged.map((e) => e.id),
+      [5, 4],
+    );
   });
 
   test("the live copy wins the tie", () => {
@@ -52,7 +60,10 @@ describe("mergeActivity", () => {
   });
 
   test("history not loaded yet still yields the live tail", () => {
-    assert.deepEqual(mergeActivity([entry({ id: 3 })], null).map((e) => e.id), [3]);
+    assert.deepEqual(
+      mergeActivity([entry({ id: 3 })], null).map((e) => e.id),
+      [3],
+    );
   });
 });
 
@@ -64,7 +75,10 @@ describe("forTarget / forKey", () => {
   ];
 
   test("filters by relation", () => {
-    assert.deepEqual(forTarget(all, "shop.public.users").map((e) => e.id), [1]);
+    assert.deepEqual(
+      forTarget(all, "shop.public.users").map((e) => e.id),
+      [1],
+    );
   });
 
   test("calls that took no relation belong to no relation", () => {
@@ -72,7 +86,10 @@ describe("forTarget / forKey", () => {
   });
 
   test("filters by key", () => {
-    assert.deepEqual(forKey(all, "k2").map((e) => e.id), [2]);
+    assert.deepEqual(
+      forKey(all, "k2").map((e) => e.id),
+      [2],
+    );
   });
 });
 
@@ -80,9 +97,12 @@ describe("relTime", () => {
   const now = new Date("2026-01-01T12:00:00.000Z").getTime();
   const at = (iso: string) => relTime(iso, now);
 
-  test("seconds", () => assert.equal(at("2026-01-01T11:59:30.000Z"), "30s ago"));
-  test("just now", () => assert.equal(at("2026-01-01T11:59:59.000Z"), "just now"));
-  test("minutes", () => assert.equal(at("2026-01-01T11:20:00.000Z"), "40m ago"));
+  test("seconds", () =>
+    assert.equal(at("2026-01-01T11:59:30.000Z"), "30s ago"));
+  test("just now", () =>
+    assert.equal(at("2026-01-01T11:59:59.000Z"), "just now"));
+  test("minutes", () =>
+    assert.equal(at("2026-01-01T11:20:00.000Z"), "40m ago"));
   test("hours", () => assert.equal(at("2026-01-01T04:00:00.000Z"), "8h ago"));
 
   test("a clock skewed into the future does not read as negative", () => {

@@ -2,7 +2,14 @@
 // Editable mode adds selection + inline cell editing + sorting; SQL results
 // reuse it in read-only mode.
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowDown, ArrowUp, Check, ChevronsUpDown, Loader2, Minus } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  ChevronsUpDown,
+  Loader2,
+  Minus,
+} from "lucide-react";
 import {
   memo,
   useCallback,
@@ -12,17 +19,17 @@ import {
   useRef,
   useState,
 } from "react";
-
-import type { CellValue, Row } from "../../../../shared/types.ts";
-import { rowKey } from "../../../../shared/row-key.ts";
-import { CellFilterMenu, HeaderFilterMenu } from "./QuickFilterMenu.tsx";
-import { isNumericType, MONO_TYPES, valueClass } from "@/lib/pg-types.ts";
-import { cn } from "@/lib/utils.ts";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu.tsx";
+import { isNumericType, MONO_TYPES, valueClass } from "@/lib/pg-types.ts";
+import { cn } from "@/lib/utils.ts";
+import { noop } from "../../../../shared/noop.ts";
+import { rowKey } from "../../../../shared/row-key.ts";
+import type { CellValue, Row } from "../../../../shared/types.ts";
+import { CellFilterMenu, HeaderFilterMenu } from "./QuickFilterMenu.tsx";
 
 export interface GridColumn {
   name: string;
@@ -45,7 +52,9 @@ export interface DataGridProps {
   sortState?: SortState | null | undefined;
   onSortChange?: ((s: SortState | null) => void) | undefined;
   /** Right-click preset filters (Table tab only). Absent → no context menus. */
-  onQuickFilter?: ((clause: string, mode?: "replace" | "append") => void) | undefined;
+  onQuickFilter?:
+    | ((clause: string, mode?: "replace" | "append") => void)
+    | undefined;
   onCommitCell?:
     | ((row: Row, column: string, value: CellValue) => Promise<void>)
     | undefined;
@@ -73,7 +82,11 @@ const MIN_COL_W = 56;
 const MAX_STRETCH = 2.5;
 const MAX_STRETCH_W = 420;
 
-function estimateWidth(name: string, type: string, samples: CellValue[]): number {
+function estimateWidth(
+  name: string,
+  type: string,
+  samples: CellValue[],
+): number {
   const headerLen = name.length + type.length + 3;
   let max = 0;
   for (const v of samples) {
@@ -122,6 +135,9 @@ export function DataGrid({
   // changes — a width dragged for `rna` means nothing on the next table.
   const colKey = useMemo(() => columns.map((c) => c.name).join(""), [columns]);
   const [overrides, setOverrides] = useState<Record<string, number>>({});
+  // `colKey` is the trigger: when the column set changes the dragged widths
+  // are meaningless, so the body clears them without reading it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   useEffect(() => {
     setOverrides({});
   }, [colKey]);
@@ -129,7 +145,11 @@ export function DataGrid({
   const widths = useMemo(() => {
     const samples = rows.slice(0, 100);
     const base = columns.map((c, i) =>
-      estimateWidth(c.name, c.type, samples.map((r) => r[i] ?? null)),
+      estimateWidth(
+        c.name,
+        c.type,
+        samples.map((r) => r[i] ?? null),
+      ),
     );
     const sum = base.reduce((a, b) => a + b, 0);
     let out = base;
@@ -152,7 +172,8 @@ export function DataGrid({
   // it, or a relation that has none — means rows cannot be matched to what an
   // agent read, so nothing flashes rather than the wrong thing flashing.
   const pkIdx = useMemo(() => {
-    if (!agentRows || agentRows.size === 0 || pkColumns.length === 0) return null;
+    if (!agentRows || agentRows.size === 0 || pkColumns.length === 0)
+      return null;
     const idx = pkColumns.map((pk) => columns.findIndex((c) => c.name === pk));
     return idx.every((i) => i >= 0) ? idx : null;
   }, [agentRows, pkColumns, columns]);
@@ -175,7 +196,10 @@ export function DataGrid({
       const onMove = (ev: PointerEvent): void => {
         setOverrides((o) => ({
           ...o,
-          [name]: Math.max(MIN_COL_W, Math.round(currentW + (ev.clientX - startX))),
+          [name]: Math.max(
+            MIN_COL_W,
+            Math.round(currentW + (ev.clientX - startX)),
+          ),
         }));
       };
       const onUp = (): void => {
@@ -193,15 +217,18 @@ export function DataGrid({
   );
 
   /** Double-click a resizer: drop the override and go back to auto-fit. */
-  const autoFit = useCallback((colIdx: number) => {
-    const name = columns[colIdx]?.name;
-    if (!name) return;
-    setOverrides((o) => {
-      const next = { ...o };
-      delete next[name];
-      return next;
-    });
-  }, [columns]);
+  const autoFit = useCallback(
+    (colIdx: number) => {
+      const name = columns[colIdx]?.name;
+      if (!name) return;
+      setOverrides((o) => {
+        const next = { ...o };
+        delete next[name];
+        return next;
+      });
+    },
+    [columns],
+  );
 
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -260,27 +287,27 @@ export function DataGrid({
     const name = columns[colIdx]?.name;
     if (!name) return;
     if (sortState?.column !== name) onSortChange({ column: name, dir: "asc" });
-    else if (sortState.dir === "asc") onSortChange({ column: name, dir: "desc" });
+    else if (sortState.dir === "asc")
+      onSortChange({ column: name, dir: "desc" });
     else onSortChange(null);
   }
 
-  const allSelected = !!selected && selected.size === rows.length && rows.length > 0;
+  const allSelected =
+    !!selected && selected.size === rows.length && rows.length > 0;
   const gridTemplate = `${GUTTER_W}px ${widths.map((w) => `${w}px`).join(" ")}`;
 
   return (
     <div className={cn("relative h-full", className)}>
       {/* loading veil — the last page stays readable underneath but can never
           pass for fresh data (a slow count used to leave stale rows on screen) */}
-      {loading
-        ? (
-          <div className="pointer-events-none absolute inset-0 z-30 flex items-start justify-center bg-background/60 animate-fade-in">
-            <span className="mt-16 flex items-center gap-2 rounded-full border border-border-strong bg-overlay px-3 py-1.5 text-xs text-muted shadow-md">
-              <Loader2 className="size-3.5 animate-spin" />
-              Loading…
-            </span>
-          </div>
-        )
-        : null}
+      {loading ? (
+        <div className="pointer-events-none absolute inset-0 z-30 flex items-start justify-center bg-background/60 animate-fade-in">
+          <span className="mt-16 flex items-center gap-2 rounded-full border border-border-strong bg-overlay px-3 py-1.5 text-xs text-muted shadow-md">
+            <Loader2 className="size-3.5 animate-spin" />
+            Loading…
+          </span>
+        </div>
+      ) : null}
       <div ref={scrollRef} className="h-full overflow-auto bg-background">
         {/* header */}
         <div
@@ -288,34 +315,36 @@ export function DataGrid({
           style={{ gridTemplateColumns: gridTemplate, minWidth: totalW }}
         >
           <div className="sticky left-0 z-10 flex items-center justify-center border-r border-border bg-raised px-2 py-1">
-            {selectable
-              ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!selected || !onSelectionChange) return;
-                    onSelectionChange(
-                      allSelected ? new Set() : new Set(rows.map((_, i) => i)),
-                    );
-                  }}
-                  disabled={rows.length === 0}
-                  className={cn(
-                    "flex size-3.5 items-center justify-center rounded-xs border transition-colors",
-                    selected && selected.size > 0
-                      ? "border-accent bg-accent text-accent-fg"
-                      : "border-border-strong bg-background hover:border-accent",
-                    rows.length === 0 && "opacity-40",
-                  )}
-                  aria-label={allSelected ? "Clear selection" : "Select all rows"}
-                >
-                  {selected && selected.size > 0
-                    ? (allSelected
-                      ? <Check className="size-3" />
-                      : <Minus className="size-3" />)
-                    : null}
-                </button>
-              )
-              : <span className="text-[10px] text-subtle">#</span>}
+            {selectable ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!selected || !onSelectionChange) return;
+                  onSelectionChange(
+                    allSelected ? new Set() : new Set(rows.map((_, i) => i)),
+                  );
+                }}
+                disabled={rows.length === 0}
+                className={cn(
+                  "flex size-3.5 items-center justify-center rounded-xs border transition-colors",
+                  selected && selected.size > 0
+                    ? "border-accent bg-accent text-accent-fg"
+                    : "border-border-strong bg-background hover:border-accent",
+                  rows.length === 0 && "opacity-40",
+                )}
+                aria-label={allSelected ? "Clear selection" : "Select all rows"}
+              >
+                {selected && selected.size > 0 ? (
+                  allSelected ? (
+                    <Check className="size-3" />
+                  ) : (
+                    <Minus className="size-3" />
+                  )
+                ) : null}
+              </button>
+            ) : (
+              <span className="text-[10px] text-subtle">#</span>
+            )}
           </div>
           {columns.map((c, i) => {
             const sorted = sortState?.column === c.name;
@@ -330,28 +359,62 @@ export function DataGrid({
                   sorted && "text-accent-text",
                 )}
                 onClick={() => onSortChange && cycleSort(i)}
-                title={onSortChange ? `${c.name} · ${c.type} — click to sort` : `${c.name} · ${c.type}`}
+                // Sorting was mouse-only. A header that sorts is a control,
+                // so it takes focus and answers Enter/Space like one.
+                onKeyDown={(e) => {
+                  if (!onSortChange) return;
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    cycleSort(i);
+                  }
+                }}
+                role="columnheader"
+                tabIndex={onSortChange ? 0 : undefined}
+                aria-sort={
+                  sorted
+                    ? sortState?.dir === "asc"
+                      ? "ascending"
+                      : "descending"
+                    : onSortChange
+                      ? "none"
+                      : undefined
+                }
+                title={
+                  onSortChange
+                    ? `${c.name} · ${c.type} — click to sort`
+                    : `${c.name} · ${c.type}`
+                }
               >
                 {/* numeric cells are right-aligned; push the label over to meet
                     them, keeping the name-then-type order every column uses */}
-                <span className={cn("truncate", numeric && "ml-auto")}>{c.name}</span>
+                <span className={cn("truncate", numeric && "ml-auto")}>
+                  {c.name}
+                </span>
                 <span className="shrink-0 font-mono text-[10px] font-normal lowercase text-subtle">
                   {c.type}
                 </span>
                 <span className={cn("shrink-0", !numeric && "ml-auto")}>
-                  {sorted
-                    ? (sortState?.dir === "asc"
-                      ? <ArrowUp className="size-3" />
-                      : <ArrowDown className="size-3" />)
-                    : onSortChange
-                    ? (
-                      <ChevronsUpDown className="size-3 opacity-0 transition-opacity group-hover/h:opacity-40" />
+                  {sorted ? (
+                    sortState?.dir === "asc" ? (
+                      <ArrowUp className="size-3" />
+                    ) : (
+                      <ArrowDown className="size-3" />
                     )
-                    : null}
+                  ) : onSortChange ? (
+                    <ChevronsUpDown className="size-3 opacity-0 transition-opacity group-hover/h:opacity-40" />
+                  ) : null}
                 </span>
-                {/* Resizer sits on the seam and swallows the sort click. */}
+                {/* Resizer sits on the seam and swallows the sort click.
+                    Pointer-only: keyboard resizing would need the full
+                    separator contract (aria-valuenow/min/max tracking the
+                    live width), which is a feature rather than a lint fix.
+                    The column can still be sorted and read from the
+                    keyboard — only dragging is unavailable. */}
+                {/* biome-ignore lint/a11y: see above */}
                 <span
-                  onPointerDown={(e) => startResize(e, i, widths[i] ?? MIN_COL_W)}
+                  onPointerDown={(e) =>
+                    startResize(e, i, widths[i] ?? MIN_COL_W)
+                  }
                   onDoubleClick={(e) => {
                     e.stopPropagation();
                     autoFit(i);
@@ -360,6 +423,8 @@ export function DataGrid({
                   role="separator"
                   aria-orientation="vertical"
                   aria-label={`Resize ${c.name}`}
+                  aria-valuenow={widths[i] ?? MIN_COL_W}
+                  aria-valuemin={MIN_COL_W}
                   title="Drag to resize · double-click to auto-fit"
                   className="absolute -right-1 top-0 z-10 h-full w-2 cursor-col-resize"
                 >
@@ -367,21 +432,21 @@ export function DataGrid({
                 </span>
               </div>
             );
-            return onQuickFilter
-              ? (
-                <ContextMenu key={c.name}>
-                  <ContextMenuTrigger asChild>{cell}</ContextMenuTrigger>
-                  <ContextMenuContent>
-                    <HeaderFilterMenu
-                      column={c}
-                      sortState={sortState}
-                      onSortChange={onSortChange ?? (() => {})}
-                      onQuickFilter={(clause) => onQuickFilter(clause)}
-                    />
-                  </ContextMenuContent>
-                </ContextMenu>
-              )
-              : cell;
+            return onQuickFilter ? (
+              <ContextMenu key={c.name}>
+                <ContextMenuTrigger asChild>{cell}</ContextMenuTrigger>
+                <ContextMenuContent>
+                  <HeaderFilterMenu
+                    column={c}
+                    sortState={sortState}
+                    onSortChange={onSortChange ?? noop}
+                    onQuickFilter={(clause) => onQuickFilter(clause)}
+                  />
+                </ContextMenuContent>
+              </ContextMenu>
+            ) : (
+              cell
+            );
           })}
         </div>
 
@@ -399,24 +464,32 @@ export function DataGrid({
             const isCursor = selectedRowIndex === v.index;
             const read = wasRead(row);
             return (
+              // Clicking a row opens the JSON pane, and there is no keyboard
+              // route to it yet. The right fix is arrow-key navigation across
+              // a single tab stop, the way the grid pattern prescribes —
+              // making every virtualised row its own tab stop would be worse
+              // than the gap it closes. Tracked separately.
+              // biome-ignore lint/a11y: see above
               <div
                 key={v.key}
                 className={cn(
                   "group/row absolute left-0 right-0 grid border-b border-border/50 text-[13px]",
                   isSelected || isCursor
                     ? "bg-accent-soft"
-                    // A read row keeps its own hover shade. The plain hover
-                    // utility is emitted after bg-agent-read and would
-                    // otherwise win, erasing the marker on exactly the row the
-                    // pointer — and so the eye — is resting on.
-                    : read
-                    ? "hover:bg-agent-read-hover"
-                    : "hover:bg-surface/70",
+                    : // A read row keeps its own hover shade. The plain hover
+                      // utility is emitted after bg-agent-read and would
+                      // otherwise win, erasing the marker on exactly the row the
+                      // pointer — and so the eye — is resting on.
+                      read
+                      ? "hover:bg-agent-read-hover"
+                      : "hover:bg-surface/70",
                   // A selection the user made must stay legible, so an agent
                   // read only tints a row that is not already highlighted.
                   // The tint is static and the pulse is decorative: with
                   // reduced motion the row still shows as read.
-                  read && !isSelected && !isCursor &&
+                  read &&
+                    !isSelected &&
+                    !isCursor &&
                     "bg-agent-read animate-agent-read",
                 )}
                 title={read ? "An MCP agent read this row" : undefined}
@@ -427,9 +500,9 @@ export function DataGrid({
                   gridTemplateColumns: gridTemplate,
                 }}
                 onDoubleClick={(e) => {
-                  const cell = (e.target as HTMLElement).closest("[data-col]") as
-                    | HTMLElement
-                    | null;
+                  const cell = (e.target as HTMLElement).closest(
+                    "[data-col]",
+                  ) as HTMLElement | null;
                   if (cell?.dataset.col !== undefined) {
                     startEdit(v.index, Number(cell.dataset.col));
                   }
@@ -452,35 +525,33 @@ export function DataGrid({
                       aria-hidden
                     />
                   ) : null}
-                  {selectable
-                    ? (
-                      <>
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleRow(v.index)}
-                          onClick={(e) => e.stopPropagation()}
-                          aria-label={`Select row ${rowOffset + v.index + 1}`}
-                          className={cn(
-                            "size-3.5 accent-[var(--accent)]",
-                            !isSelected && "hidden group-hover/row:block",
-                          )}
-                        />
-                        <span
-                          className={cn(
-                            "font-mono text-[11px] tabular-nums text-subtle",
-                            isSelected ? "hidden" : "group-hover/row:hidden",
-                          )}
-                        >
-                          {rowOffset + v.index + 1}
-                        </span>
-                      </>
-                    )
-                    : (
-                      <span className="font-mono text-[11px] tabular-nums text-subtle">
+                  {selectable ? (
+                    <>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleRow(v.index)}
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`Select row ${rowOffset + v.index + 1}`}
+                        className={cn(
+                          "size-3.5 accent-[var(--accent)]",
+                          !isSelected && "hidden group-hover/row:block",
+                        )}
+                      />
+                      <span
+                        className={cn(
+                          "font-mono text-[11px] tabular-nums text-subtle",
+                          isSelected ? "hidden" : "group-hover/row:hidden",
+                        )}
+                      >
                         {rowOffset + v.index + 1}
                       </span>
-                    )}
+                    </>
+                  ) : (
+                    <span className="font-mono text-[11px] tabular-nums text-subtle">
+                      {rowOffset + v.index + 1}
+                    </span>
+                  )}
                 </div>
                 {columns.map((c, i) => {
                   const cell = (
@@ -493,44 +564,42 @@ export function DataGrid({
                         isNumericType(c.type) && "text-right",
                       )}
                     >
-                      {editing?.row === v.index && editing.col === i
-                        ? (
-                          <CellEditor
-                            value={editText}
-                            type={c.type}
-                            onChange={setEditText}
-                            onCommit={() => void commitEdit()}
-                            onCancel={cancelEdit}
-                          />
-                        )
-                        : <CellValueView value={row[i] ?? null} type={c.type} />}
+                      {editing?.row === v.index && editing.col === i ? (
+                        <CellEditor
+                          value={editText}
+                          type={c.type}
+                          onChange={setEditText}
+                          onCommit={() => void commitEdit()}
+                          onCancel={cancelEdit}
+                        />
+                      ) : (
+                        <CellValueView value={row[i] ?? null} type={c.type} />
+                      )}
                     </div>
                   );
-                  return onQuickFilter
-                    ? (
-                      <ContextMenu key={c.name}>
-                        <ContextMenuTrigger asChild>{cell}</ContextMenuTrigger>
-                        <ContextMenuContent>
-                          <CellFilterMenu
-                            column={c}
-                            value={row[i] ?? null}
-                            onQuickFilter={onQuickFilter}
-                          />
-                        </ContextMenuContent>
-                      </ContextMenu>
-                    )
-                    : cell;
+                  return onQuickFilter ? (
+                    <ContextMenu key={c.name}>
+                      <ContextMenuTrigger asChild>{cell}</ContextMenuTrigger>
+                      <ContextMenuContent>
+                        <CellFilterMenu
+                          column={c}
+                          value={row[i] ?? null}
+                          onQuickFilter={onQuickFilter}
+                        />
+                      </ContextMenuContent>
+                    </ContextMenu>
+                  ) : (
+                    cell
+                  );
                 })}
               </div>
             );
           })}
-          {rows.length === 0 && !loading
-            ? (
-              <div className="p-10 text-center text-sm text-muted">
-                {emptyMessage}
-              </div>
-            )
-            : null}
+          {rows.length === 0 && !loading ? (
+            <div className="p-10 text-center text-sm text-muted">
+              {emptyMessage}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
@@ -550,6 +619,9 @@ function CellValueView({ value, type }: { value: CellValue; type: string }) {
   );
 }
 
+// The inner name is what React DevTools shows for a memoised component, so
+// it deliberately matches the binding: that is the point of the idiom.
+// biome-ignore lint/suspicious/noShadow: see above
 const CellEditor = memo(function CellEditor({
   value,
   type,

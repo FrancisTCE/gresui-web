@@ -10,12 +10,16 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Label } from "@/components/ui/label.tsx";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.tsx";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip.tsx";
 import {
   describeConnection,
   formatConnectionString,
-  parseConnectionString,
   type ParsedConnection,
+  parseConnectionString,
 } from "@/lib/conn-string.ts";
 
 export function ConnectionStringField({
@@ -94,27 +98,24 @@ export function ConnectionStringField({
       />
 
       <div id="conn-string-status" aria-live="polite" className="min-h-4">
-        {result === null
-          ? (
-            <p className="text-[11px] text-subtle">
-              Paste a URI or a <code className="text-muted">key=value</code>
-              {" "}
-              string to fill in the fields below.
-            </p>
-          )
-          : result.ok && result.value
-          ? (
-            <p className="flex items-start gap-1.5 text-[11px] text-accent-text">
-              <Check className="mt-px size-3 shrink-0" />
-              <span className="font-mono">{describeConnection(result.value)}</span>
-            </p>
-          )
-          : (
-            <p className="flex items-start gap-1.5 text-[11px] text-danger-text">
-              <AlertCircle className="mt-px size-3 shrink-0" />
-              {result.error}
-            </p>
-          )}
+        {result === null ? (
+          <p className="text-[11px] text-subtle">
+            Paste a URI or a <code className="text-muted">key=value</code>{" "}
+            string to fill in the fields below.
+          </p>
+        ) : result.ok && result.value ? (
+          <p className="flex items-start gap-1.5 text-[11px] text-accent-text">
+            <Check className="mt-px size-3 shrink-0" />
+            <span className="font-mono">
+              {describeConnection(result.value)}
+            </span>
+          </p>
+        ) : (
+          <p className="flex items-start gap-1.5 text-[11px] text-danger-text">
+            <AlertCircle className="mt-px size-3 shrink-0" />
+            {result.error}
+          </p>
+        )}
         {result?.warnings.map((w) => (
           <p
             key={w}

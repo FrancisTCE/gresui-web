@@ -21,21 +21,20 @@ import {
   View,
 } from "lucide-react";
 import {
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
-
-import type { RelationKind } from "../../../shared/types.ts";
-import { useAppStore, type ActiveTarget } from "@/AppStore.tsx";
+import { type ActiveTarget, useAppStore } from "@/AppStore.tsx";
 import { Kbd } from "@/components/ui/kbd.tsx";
-import { crawlCatalog, type CatalogTable } from "@/lib/catalog.ts";
-import { fuzzyMatch, splitMatch } from "@/lib/fuzzy.ts";
+import { type CatalogTable, crawlCatalog } from "@/lib/catalog.ts";
 import { formatCompact } from "@/lib/format.ts";
+import { fuzzyMatch, splitMatch } from "@/lib/fuzzy.ts";
 import { cn } from "@/lib/utils.ts";
+import type { RelationKind } from "../../../shared/types.ts";
 
 export interface PaletteAction {
   id: string;
@@ -97,54 +96,67 @@ export function CommandPalette({
   }, [open, tables, connStatus.connected, loadTables]);
 
   // A new connection invalidates the index.
+  // The three connStatus fields are the trigger, not inputs — the body reads
+  // none of them, it just drops the cached index.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   useEffect(() => {
     setTables(null);
     setRecent([]);
-    // The three fields are the trigger; the body reads none of them.
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies
   }, [connStatus.connected, connStatus.host, connStatus.database]);
 
-  const actions = useMemo<PaletteAction[]>(() => [
-    {
-      id: "sql",
-      label: "Open SQL editor",
-      hint: "Run a query",
-      icon: SquareTerminal,
-      run: onOpenSql,
-    },
-    {
-      id: "table-mcp",
-      label: active
-        ? `MCP access for ${active.schema}.${active.table}`
-        : "MCP access for this table",
-      hint: "Which connections can read this relation",
-      icon: Plug,
-      run: onOpenTableMcp,
-    },
-    {
-      id: "mcp-server",
-      label: "Open MCP server settings",
-      hint: "The server and every connection to it",
-      icon: Server,
-      run: onOpenMcpServer,
-    },
-    {
-      id: "refresh",
-      label: "Refresh catalog",
-      hint: "Re-read databases, schemas and tables",
-      icon: RefreshCw,
-      run: () => {
-        setTables(null);
-        onRefresh();
+  const actions = useMemo<PaletteAction[]>(
+    () => [
+      {
+        id: "sql",
+        label: "Open SQL editor",
+        hint: "Run a query",
+        icon: SquareTerminal,
+        run: onOpenSql,
       },
-    },
-    {
-      id: "theme",
-      label: theme === "dark" ? "Switch to light theme" : "Switch to dark theme",
-      icon: theme === "dark" ? Sun : Moon,
-      run: () => setTheme(theme === "dark" ? "light" : "dark"),
-    },
-  ], [onOpenSql, onOpenTableMcp, onOpenMcpServer, onRefresh, theme, setTheme, active]);
+      {
+        id: "table-mcp",
+        label: active
+          ? `MCP access for ${active.schema}.${active.table}`
+          : "MCP access for this table",
+        hint: "Which connections can read this relation",
+        icon: Plug,
+        run: onOpenTableMcp,
+      },
+      {
+        id: "mcp-server",
+        label: "Open MCP server settings",
+        hint: "The server and every connection to it",
+        icon: Server,
+        run: onOpenMcpServer,
+      },
+      {
+        id: "refresh",
+        label: "Refresh catalog",
+        hint: "Re-read databases, schemas and tables",
+        icon: RefreshCw,
+        run: () => {
+          setTables(null);
+          onRefresh();
+        },
+      },
+      {
+        id: "theme",
+        label:
+          theme === "dark" ? "Switch to light theme" : "Switch to dark theme",
+        icon: theme === "dark" ? Sun : Moon,
+        run: () => setTheme(theme === "dark" ? "light" : "dark"),
+      },
+    ],
+    [
+      onOpenSql,
+      onOpenTableMcp,
+      onOpenMcpServer,
+      onRefresh,
+      theme,
+      setTheme,
+      active,
+    ],
+  );
 
   const { tableItems, actionItems } = useMemo(() => {
     const q = query.trim();
@@ -160,7 +172,8 @@ export function CommandPalette({
       for (const r of recent) {
         const hit = (tables ?? []).find(
           (t) =>
-            t.database === r.database && t.schema === r.schema &&
+            t.database === r.database &&
+            t.schema === r.schema &&
             t.table === r.table,
         );
         if (hit) {
@@ -231,13 +244,15 @@ export function CommandPalette({
     setCursor((c) => Math.min(c, Math.max(0, items.length - 1)));
   }, [items.length]);
 
+  // `items` is listed so a changed list re-runs the scroll; the body reads
+  // the DOM, not the array.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   useEffect(() => {
     listRef.current
       ?.querySelector<HTMLElement>('[data-active="true"]')
       ?.scrollIntoView({ block: "nearest" });
     // `items` is here so a changed list re-runs the scroll, not because the
     // body reads it.
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies
   }, [cursor, items]);
 
   function choose(item: Item): void {
@@ -258,10 +273,13 @@ export function CommandPalette({
         target,
         ...prev.filter(
           (p) =>
-            !(p.database === target.database && p.schema === target.schema &&
-              p.table === target.table),
+            !(
+              p.database === target.database &&
+              p.schema === target.schema &&
+              p.table === target.table
+            ),
         ),
-      ].slice(0, 5)
+      ].slice(0, 5),
     );
     setActive(target);
   }
@@ -273,7 +291,7 @@ export function CommandPalette({
     } else if (e.key === "ArrowUp" || (e.key === "p" && e.ctrlKey)) {
       e.preventDefault();
       setCursor((c) =>
-        items.length === 0 ? 0 : (c - 1 + items.length) % items.length
+        items.length === 0 ? 0 : (c - 1 + items.length) % items.length,
       );
     } else if (e.key === "Home") {
       e.preventDefault();
@@ -307,10 +325,16 @@ export function CommandPalette({
           </DialogPrimitive.Description>
 
           <div className="flex items-center gap-2.5 border-b border-border px-3.5">
-            {loading
-              ? <Loader2 className="size-4 shrink-0 animate-spin text-muted" />
-              : <Search className="size-4 shrink-0 text-muted" />}
+            {loading ? (
+              <Loader2 className="size-4 shrink-0 animate-spin text-muted" />
+            ) : (
+              <Search className="size-4 shrink-0 text-muted" />
+            )}
             <input
+              // A command palette: focus belongs in the field the moment it
+              // opens, and for a modal dialog moving focus inside is the
+              // correct behaviour rather than a violation.
+              // biome-ignore lint/a11y/noAutofocus: see above
               autoFocus
               value={query}
               onChange={(e) => {
@@ -325,103 +349,102 @@ export function CommandPalette({
           </div>
 
           <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto py-1.5">
-            {items.length === 0
-              ? (
-                <div className="px-4 py-10 text-center text-sm text-muted">
-                  {loading
-                    ? "Reading the catalog…"
-                    : query.trim()
-                    ? (
-                      <>
-                        No match for{" "}
-                        <span className="font-mono text-foreground">
-                          {query.trim()}
-                        </span>
-                      </>
-                    )
-                    : "Nothing to show yet."}
-                </div>
-              )
-              : null}
+            {items.length === 0 ? (
+              <div className="px-4 py-10 text-center text-sm text-muted">
+                {loading ? (
+                  "Reading the catalog…"
+                ) : query.trim() ? (
+                  <>
+                    No match for{" "}
+                    <span className="font-mono text-foreground">
+                      {query.trim()}
+                    </span>
+                  </>
+                ) : (
+                  "Nothing to show yet."
+                )}
+              </div>
+            ) : null}
 
-            {tableItems.length > 0
-              ? (
-                <Group label={query.trim() ? "Tables" : recent.length ? "Recent & tables" : "Tables"}>
-                  {tableItems.map((item) => {
-                    index++;
-                    const i = index;
-                    const t = item.type === "table" ? item.entry : null;
-                    if (!t) return null;
-                    const Icon = kindIcon(t.kind);
-                    return (
-                      <Row
-                        key={item.key}
-                        active={i === cursor}
-                        onMouseEnter={() => setCursor(i)}
-                        onClick={() => choose(item)}
-                        icon={<Icon className="size-4 shrink-0 text-accent-text" />}
-                        title={
-                          <Marked
-                            text={t.search}
-                            positions={item.positions}
-                          />
-                        }
-                        meta={
-                          <>
-                            {t.rowEstimate !== null && t.rowEstimate > 0
-                              ? (
-                                <span className="font-mono text-[11px] tabular-nums text-subtle">
-                                  {formatCompact(t.rowEstimate)}
-                                </span>
-                              )
-                              : null}
-                            <span className="flex items-center gap-1 text-[11px] text-subtle">
-                              <Database className="size-3" />
-                              {t.database}
+            {tableItems.length > 0 ? (
+              <Group
+                label={
+                  query.trim()
+                    ? "Tables"
+                    : recent.length
+                      ? "Recent & tables"
+                      : "Tables"
+                }
+              >
+                {tableItems.map((item) => {
+                  index++;
+                  const i = index;
+                  const t = item.type === "table" ? item.entry : null;
+                  if (!t) return null;
+                  const Icon = kindIcon(t.kind);
+                  return (
+                    <Row
+                      key={item.key}
+                      active={i === cursor}
+                      onMouseEnter={() => setCursor(i)}
+                      onClick={() => choose(item)}
+                      icon={
+                        <Icon className="size-4 shrink-0 text-accent-text" />
+                      }
+                      title={
+                        <Marked text={t.search} positions={item.positions} />
+                      }
+                      meta={
+                        <>
+                          {t.rowEstimate !== null && t.rowEstimate > 0 ? (
+                            <span className="font-mono text-[11px] tabular-nums text-subtle">
+                              {formatCompact(t.rowEstimate)}
                             </span>
-                          </>
-                        }
-                      />
-                    );
-                  })}
-                </Group>
-              )
-              : null}
+                          ) : null}
+                          <span className="flex items-center gap-1 text-[11px] text-subtle">
+                            <Database className="size-3" />
+                            {t.database}
+                          </span>
+                        </>
+                      }
+                    />
+                  );
+                })}
+              </Group>
+            ) : null}
 
-            {actionItems.length > 0
-              ? (
-                <Group label="Actions">
-                  {actionItems.map((item) => {
-                    index++;
-                    const i = index;
-                    if (item.type !== "action") return null;
-                    const Icon = item.action.icon;
-                    return (
-                      <Row
-                        key={item.key}
-                        active={i === cursor}
-                        onMouseEnter={() => setCursor(i)}
-                        onClick={() => choose(item)}
-                        icon={<Icon className="size-4 shrink-0 text-muted" />}
-                        title={
-                          <Marked
-                            text={item.action.label}
-                            positions={item.positions}
-                          />
-                        }
-                        meta={item.action.hint
-                          ? (
-                            <span className="text-[11px] text-subtle">
-                              {item.action.hint}
-                            </span>
-                          )
-                          : null}
-                      />
-                    );
-                  })}
-                </Group>
-              )
-              : null}
+            {actionItems.length > 0 ? (
+              <Group label="Actions">
+                {actionItems.map((item) => {
+                  index++;
+                  const i = index;
+                  if (item.type !== "action") return null;
+                  const Icon = item.action.icon;
+                  return (
+                    <Row
+                      key={item.key}
+                      active={i === cursor}
+                      onMouseEnter={() => setCursor(i)}
+                      onClick={() => choose(item)}
+                      icon={<Icon className="size-4 shrink-0 text-muted" />}
+                      title={
+                        <Marked
+                          text={item.action.label}
+                          positions={item.positions}
+                        />
+                      }
+                      meta={
+                        item.action.hint ? (
+                          <span className="text-[11px] text-subtle">
+                            {item.action.hint}
+                          </span>
+                        ) : null
+                      }
+                    />
+                  );
+                })}
+              </Group>
+            ) : null}
           </div>
 
           <div className="flex shrink-0 items-center gap-3 border-t border-border bg-raised px-3.5 py-2 text-[11px] text-subtle">
@@ -436,14 +459,12 @@ export function CommandPalette({
               </Kbd>
               open
             </span>
-            {tables !== null
-              ? (
-                <span className="ml-auto flex items-center gap-1">
-                  <Layers className="size-3" />
-                  {tables.length} relations indexed
-                </span>
-              )
-              : null}
+            {tables !== null ? (
+              <span className="ml-auto flex items-center gap-1">
+                <Layers className="size-3" />
+                {tables.length} relations indexed
+              </span>
+            ) : null}
           </div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
@@ -505,7 +526,9 @@ function Marked({ text, positions }: { text: string; positions: number[] }) {
         <span
           // Positional slices of one string: the index is what identifies a
           // run, and two runs can hold the same text.
-          // oxlint-disable-next-line react/no-array-index-key
+          // Positional slices of one string: the index is what identifies a
+          // run, and two runs can hold the same text.
+          // biome-ignore lint/suspicious/noArrayIndexKey: see above
           key={i}
           className={run.hit ? "font-semibold text-accent-text" : undefined}
         >

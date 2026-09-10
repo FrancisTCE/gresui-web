@@ -39,4 +39,3 @@ export function publish(e: AppEvent): void {
 export function listenerCount(): number {
   return listeners.size;
 }
-

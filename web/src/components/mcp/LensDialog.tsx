@@ -11,8 +11,6 @@
 // one meaning, not two.
 import { Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-
-import type { ColumnInfo, McpKeyInfo, McpLens } from "../../../../shared/types.ts";
 import { Badge } from "@/components/ui/badge.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import {
@@ -27,6 +25,11 @@ import { Input } from "@/components/ui/input.tsx";
 import { Label } from "@/components/ui/label.tsx";
 import { call, getBindings } from "@/lib/rpc.ts";
 import { cn } from "@/lib/utils.ts";
+import type {
+  ColumnInfo,
+  McpKeyInfo,
+  McpLens,
+} from "../../../../shared/types.ts";
 
 export function LensDialog({
   open,
@@ -68,7 +71,9 @@ export function LensDialog({
     setColumns(null);
     void (async () => {
       try {
-        const info = await call(getBindings().getTableInfo(database, schema, table));
+        const info = await call(
+          getBindings().getTableInfo(database, schema, table),
+        );
         setColumns(info.columns);
         setPkColumns(info.pkColumns);
       } catch (e) {
@@ -85,8 +90,8 @@ export function LensDialog({
   /** Hiding a key column is allowed but costs the agent row identity, and
    * costs the operator the grid highlight — say so rather than forbid it. */
   const hidesKey = pkColumns.some((c) => hidden.has(c));
-  const hidesEverything = columns !== null && columns.length > 0 &&
-    visible.length === 0;
+  const hidesEverything =
+    columns !== null && columns.length > 0 && visible.length === 0;
   const restricts = hidden.size > 0 || filter.trim() !== "";
 
   function toggle(name: string): void {
@@ -137,12 +142,15 @@ export function LensDialog({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            Lens on <code className="font-mono">{schema}.{table}</code>
+            Lens on{" "}
+            <code className="font-mono">
+              {schema}.{table}
+            </code>
           </DialogTitle>
           <DialogDescription>
             What &ldquo;{keyInfo.name}&rdquo; sees of this relation. Hidden
-            columns are absent from the schema it reads, not just from the
-            rows — it cannot select them, filter on them, or learn they exist.
+            columns are absent from the schema it reads, not just from the rows
+            — it cannot select them, filter on them, or learn they exist.
           </DialogDescription>
         </DialogHeader>
 
@@ -194,7 +202,9 @@ export function LensDialog({
                         {c.name}
                       </code>
                       {pkColumns.includes(c.name) ? (
-                        <Badge variant="outline" className="shrink-0">key</Badge>
+                        <Badge variant="outline" className="shrink-0">
+                          key
+                        </Badge>
                       ) : null}
                       <span className="shrink-0 font-mono text-[11px] text-muted">
                         {c.type}
@@ -297,7 +307,8 @@ function Note({
       className={cn(
         "flex items-start gap-2 rounded-md border px-3 py-2 text-xs",
         tone === "ok" && "border-accent/40 bg-accent/10 text-foreground",
-        tone === "warning" && "border-warning-text/40 bg-warning-text/10 text-foreground",
+        tone === "warning" &&
+          "border-warning-text/40 bg-warning-text/10 text-foreground",
         tone === "danger" && "border-danger/40 bg-danger/10 text-foreground",
         tone === "plain" && "border-border bg-raised text-muted",
       )}

@@ -6,11 +6,11 @@ import type { McpKeyInfo } from "../../../shared/types.ts";
 import {
   canonicalTable,
   keyCoverage,
-  tableEntry,
-  withTable,
-  withoutTable,
   lensFor,
   lensRestricts,
+  tableEntry,
+  withoutTable,
+  withTable,
 } from "./mcp-scope.ts";
 
 const ANCHOR = "shop";
@@ -113,16 +113,22 @@ describe("withTable / withoutTable", () => {
 
 describe("lensFor", () => {
   test("matches a lens written unqualified against a qualified relation", () => {
-    const k = { ...key([]), lenses: [
-      { table: "public.users", hiddenColumns: ["email"], rowFilter: "" },
-    ] };
+    const k = {
+      ...key([]),
+      lenses: [
+        { table: "public.users", hiddenColumns: ["email"], rowFilter: "" },
+      ],
+    };
     assert.deepEqual(lensFor(k, USERS, ANCHOR)?.hiddenColumns, ["email"]);
   });
 
   test("does not leak a lens across databases", () => {
-    const k = { ...key([]), lenses: [
-      { table: "public.orders", hiddenColumns: ["total"], rowFilter: "" },
-    ] };
+    const k = {
+      ...key([]),
+      lenses: [
+        { table: "public.orders", hiddenColumns: ["total"], rowFilter: "" },
+      ],
+    };
     // Same schema.table spelling, different database: not the same relation.
     assert.equal(lensFor(k, ORDERS, ANCHOR), null);
   });
@@ -135,14 +141,22 @@ describe("lensFor", () => {
 describe("lensRestricts", () => {
   test("a lens that hides nothing and filters nothing restricts nothing", () => {
     assert.equal(
-      lensRestricts({ table: "public.users", hiddenColumns: [], rowFilter: "  " }),
+      lensRestricts({
+        table: "public.users",
+        hiddenColumns: [],
+        rowFilter: "  ",
+      }),
       false,
     );
   });
 
   test("a row filter alone is a restriction", () => {
     assert.equal(
-      lensRestricts({ table: "public.users", hiddenColumns: [], rowFilter: "id > 5" }),
+      lensRestricts({
+        table: "public.users",
+        hiddenColumns: [],
+        rowFilter: "id > 5",
+      }),
       true,
     );
   });

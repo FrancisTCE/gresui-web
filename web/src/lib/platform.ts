@@ -6,9 +6,11 @@ export function isMac(): boolean {
   if (typeof navigator === "undefined") return false;
   // userAgentData is the supported route; the platform string is the fallback
   // that still works in Safari and Firefox.
-  const data = (navigator as Navigator & {
-    userAgentData?: { platform?: string };
-  }).userAgentData;
+  const data = (
+    navigator as Navigator & {
+      userAgentData?: { platform?: string };
+    }
+  ).userAgentData;
   const platform = data?.platform ?? navigator.platform ?? "";
   return /mac/i.test(platform);
 }

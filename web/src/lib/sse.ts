@@ -26,7 +26,6 @@ export function openEventStream(h: StreamHandlers): () => void {
   const loop = async (): Promise<void> => {
     // `stopped` is set by the closer this function returns, which a linter
     // reading only the loop body cannot see.
-    // oxlint-disable-next-line no-unmodified-loop-condition
     while (!stopped) {
       h.onStatus("connecting");
       try {
@@ -96,9 +95,13 @@ function dispatch(frame: string, h: StreamHandlers): void {
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     const t = setTimeout(resolve, ms);
-    signal.addEventListener("abort", () => {
-      clearTimeout(t);
-      resolve();
-    }, { once: true });
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(t);
+        resolve();
+      },
+      { once: true },
+    );
   });
 }

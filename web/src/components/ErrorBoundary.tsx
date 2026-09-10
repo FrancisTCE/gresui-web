@@ -34,8 +34,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
-    const detail =
-      `${error.message}\n${error.stack ?? ""}\n${info.componentStack ?? ""}`;
+    const detail = `${error.message}\n${error.stack ?? ""}\n${info.componentStack ?? ""}`;
     void logCrash(detail);
   }
 

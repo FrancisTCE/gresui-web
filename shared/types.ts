@@ -196,8 +196,7 @@ export interface McpUsageEntry {
 /** Pushed to the frontend over `GET /events` as it happens. Every event
  * carries its own tag, so one stream can grow more kinds without the client
  * having to guess from shape. */
-export type AppEvent =
-  | { type: "mcp-activity"; entry: McpUsageEntry };
+export type AppEvent = { type: "mcp-activity"; entry: McpUsageEntry };
 
 export interface McpServerInfo {
   enabled: boolean;

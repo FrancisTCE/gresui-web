@@ -2,6 +2,7 @@
 // Swap point for npm:pg: keep this PgSession surface identical.
 
 import postgres from "postgres";
+import { ignoreError } from "../shared/noop.ts";
 import type { CellValue, ConnectionConfig, Row } from "../shared/types.ts";
 
 export interface QueryOutcome {
@@ -19,7 +20,9 @@ export function quoteIdent(parts: string[]): string {
 /** Normalize driver values into CellValue (JSON-safe plain data). */
 function normalizeCell(v: unknown): CellValue {
   if (
-    v === null || typeof v === "boolean" || typeof v === "number" ||
+    v === null ||
+    typeof v === "boolean" ||
+    typeof v === "number" ||
     typeof v === "string"
   ) {
     return v;
@@ -72,11 +75,12 @@ export class PgSession {
 
   async connect(): Promise<void> {
     const { cfg } = this;
-    const ssl = cfg.ssl === "disable"
-      ? false
-      : cfg.ssl === "require"
-      ? { rejectUnauthorized: false }
-      : { rejectUnauthorized: true };
+    const ssl =
+      cfg.ssl === "disable"
+        ? false
+        : cfg.ssl === "require"
+          ? { rejectUnauthorized: false }
+          : { rejectUnauthorized: true };
     const sql = postgres({
       host: cfg.host,
       port: cfg.port,
@@ -92,7 +96,7 @@ export class PgSession {
       // Probe — the driver is lazy; this makes connection failures synchronous.
       await sql`SELECT 1`;
     } catch (err) {
-      await sql.end().catch(() => {});
+      await sql.end().catch(ignoreError);
       throw new Error(pgMessage(err), { cause: err });
     }
     this.sql = sql;
@@ -103,9 +107,10 @@ export class PgSession {
     const sql = this.sql;
     // Only ever called from connect(), immediately after this.sql is set.
     if (!sql) throw new Error("Not connected");
-    const res = await sql.unsafe<
-      { oid: number; typname: string }[]
-    >("SELECT oid::int4 AS oid, typname FROM pg_type", []);
+    const res = await sql.unsafe<{ oid: number; typname: string }[]>(
+      "SELECT oid::int4 AS oid, typname FROM pg_type",
+      [],
+    );
     this.typeMap = new Map(res.map((r) => [r.oid, r.typname]));
   }
 
@@ -121,19 +126,26 @@ export class PgSession {
     // whose rows are plain objects); multi-statement resolves with a plain
     // array of Results. A multi result's first element is itself a Result
     // (has a `columns` own-property); a single result's first element is a row.
-    return Array.isArray(result) && result.length > 0 &&
-      typeof result[0] === "object" && result[0] !== null &&
-      "columns" in result[0];
+    return (
+      Array.isArray(result) &&
+      result.length > 0 &&
+      typeof result[0] === "object" &&
+      result[0] !== null &&
+      "columns" in result[0]
+    );
   }
 
   private toOutcome(r: unknown): QueryOutcome {
-    const rawCols: RawColumn[] = (r as { columns?: RawColumn[] })?.columns ?? [];
+    const rawCols: RawColumn[] =
+      (r as { columns?: RawColumn[] })?.columns ?? [];
     const columns = rawCols.map((c) => ({
       name: c.name,
       type: this.typeName(c.type),
     }));
     const rows: Row[] = ((r as unknown[]) ?? []).map((row) =>
-      rawCols.map((c) => normalizeCell((row as Record<string, unknown>)[c.name])),
+      rawCols.map((c) =>
+        normalizeCell((row as Record<string, unknown>)[c.name]),
+      ),
     );
     return {
       columns,
@@ -176,12 +188,15 @@ export class PgSession {
   }
 
   async query(text: string, params: unknown[] = []): Promise<QueryOutcome> {
-    return await this.run(text, params, false) as QueryOutcome;
+    return (await this.run(text, params, false)) as QueryOutcome;
   }
 
   /** Every result set of a multi-statement string (transaction wraps etc.). */
-  async queryAll(text: string, params: unknown[] = []): Promise<QueryOutcome[]> {
-    return await this.run(text, params, true) as QueryOutcome[];
+  async queryAll(
+    text: string,
+    params: unknown[] = [],
+  ): Promise<QueryOutcome[]> {
+    return (await this.run(text, params, true)) as QueryOutcome[];
   }
 
   /** Sends a PostgreSQL CancelRequest for the in-flight query. Not async:
@@ -195,7 +210,7 @@ export class PgSession {
   async close(): Promise<void> {
     const sql = this.sql;
     this.sql = null;
-    if (sql) await sql.end().catch(() => {});
+    if (sql) await sql.end().catch(ignoreError);
   }
 }
 
@@ -256,6 +271,6 @@ export class PgPool {
     this.connecting.clear();
     const all = [...this.sessions.values()];
     this.sessions.clear();
-    await Promise.all(all.map((s) => s.close().catch(() => {})));
+    await Promise.all(all.map((s) => s.close().catch(ignoreError)));
   }
 }

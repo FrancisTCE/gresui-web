@@ -7,7 +7,7 @@ import type {
   RelationInfo,
   TableInfo,
 } from "../shared/types.ts";
-import { quoteIdent, type PgSession } from "./pg.ts";
+import { type PgSession, quoteIdent } from "./pg.ts";
 
 const regclassParam = (schema: string, table: string) =>
   quoteIdent([schema, table]);
